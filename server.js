@@ -2,11 +2,20 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
+const multer = require('multer');
 
 console.log('=== SERVER STARTING ===');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Configure multer for cookie file uploads
+const upload = multer({ 
+    dest: 'cookies/',
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    }
+});
 
 // Middleware
 app.use(express.json());
@@ -15,12 +24,19 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Serve downloaded videos
 app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 
-// Ensure downloads directory exists
+// Serve cookie files (only for internal use)
+app.use('/cookies', express.static(path.join(__dirname, 'cookies')));
+
+// Ensure directories exist
 const downloadsDir = path.join(__dirname, 'downloads');
-if (!fs.existsSync(downloadsDir)) {
-    fs.mkdirSync(downloadsDir, { recursive: true });
-    console.log('Created downloads directory');
-}
+const cookiesDir = path.join(__dirname, 'cookies');
+
+[downloadsDir, cookiesDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        console.log(`Created directory: ${dir}`);
+    }
+});
 
 // Check if real downloads are enabled
 const realDownloadsEnabled = fs.existsSync(path.join(__dirname, 'ENABLE_REAL_DOWNLOADS'));
@@ -29,7 +45,6 @@ console.log('Real downloads enabled:', realDownloadsEnabled);
 // Download yt-dlp if it doesn't exist and real downloads are enabled
 function ensureYtDlp() {
     return new Promise((resolve) => {
-        // Only download if real downloads are enabled
         if (!realDownloadsEnabled) {
             console.log('Real downloads not enabled, skipping yt-dlp setup');
             resolve();
@@ -52,7 +67,6 @@ function ensureYtDlp() {
                 console.error('Failed to download yt-dlp:', error);
                 console.log('Real downloads will fall back to simulation');
             } else {
-                // Make it executable
                 fs.chmod(ytDlpPath, 0o755, (chmodError) => {
                     if (chmodError) {
                         console.error('Failed to make yt-dlp executable:', chmodError);
@@ -66,7 +80,7 @@ function ensureYtDlp() {
     });
 }
 
-// Initialize yt-dlp on startup (but don't wait for it to complete)
+// Initialize yt-dlp on startup
 ensureYtDlp();
 
 // API Routes
@@ -87,19 +101,47 @@ app.get('/health', (req, res) => {
     console.log('GET /health');
     const ytDlpPath = path.join(__dirname, 'yt-dlp');
     const ytDlpExists = fs.existsSync(ytDlpPath);
+    const cookieFiles = fs.existsSync(cookiesDir) ? fs.readdirSync(cookiesDir) : [];
     
     res.json({ 
         status: 'OK', 
         timestamp: new Date().toISOString(),
         realDownloads: realDownloadsEnabled,
-        ytDlpInstalled: ytDlpExists
+        ytDlpInstalled: ytDlpExists,
+        cookieFiles: cookieFiles.length
     });
 });
 
-// === DOWNLOAD FUNCTION WITH IMPROVED YOUTUBE HANDLING ===
-function downloadVideo(url) {
+// === COOKIE UPLOAD ENDPOINT ===
+app.post('/api/upload-cookie', upload.single('cookieFile'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No cookie file uploaded' });
+    }
+    
+    console.log('Cookie file uploaded:', req.file.originalname);
+    
+    // Rename to more descriptive name
+    const newFilename = `cookies_${Date.now()}.txt`;
+    const newPath = path.join(cookiesDir, newFilename);
+    
+    fs.rename(req.file.path, newPath, (err) => {
+        if (err) {
+            console.error('Error renaming cookie file:', err);
+            return res.status(500).json({ error: 'Failed to process cookie file' });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Cookie file uploaded successfully',
+            filename: newFilename,
+            path: newPath
+        });
+    });
+});
+
+// === DOWNLOAD FUNCTION WITH COOKIE SUPPORT ===
+function downloadVideo(url, cookieFilename = null) {
     return new Promise((resolve, reject) => {
-        // If real downloads aren't enabled, simulate
         if (!realDownloadsEnabled) {
             console.log('Real downloads not enabled, simulating');
             setTimeout(() => {
@@ -121,10 +163,8 @@ function downloadVideo(url) {
             return;
         }
         
-        // Real download functionality
         const ytDlpPath = path.join(__dirname, 'yt-dlp');
         
-        // Check if yt-dlp exists
         if (!fs.existsSync(ytDlpPath)) {
             console.log('yt-dlp not found, simulating download');
             setTimeout(() => {
@@ -148,33 +188,28 @@ function downloadVideo(url) {
         
         console.log('Starting real download for:', url);
         
-        // Spawn yt-dlp process with improved options
         const { spawn } = require('child_process');
         
-        // Determine if this is a YouTube URL and apply specific options
-        let downloadOptions;
-        if (url.includes('youtube.com') || url.includes('youtu.be')) {
-            // YouTube-specific options for better handling
-            downloadOptions = [
-                url,
-                '--no-check-certificate',
-                '--socket-timeout', '30',
-                '--retries', '3',
-                '-f', 'bv*+ba/b',
-                '-o', path.join(downloadsDir, '%(title)s.%(ext)s'),
-                '--newline'
-            ];
-        } else {
-            // Generic options for other platforms
-            downloadOptions = [
-                url,
-                '--no-check-certificate',
-                '--socket-timeout', '30',
-                '--retries', '3',
-                '-f', 'bv*+ba/b',
-                '-o', path.join(downloadsDir, '%(title)s.%(ext)s'),
-                '--newline'
-            ];
+        // Build download options
+        let downloadOptions = [
+            url,
+            '--no-check-certificate',
+            '--socket-timeout', '30',
+            '--retries', '3',
+            '-f', 'bv*+ba/b',
+            '-o', path.join(downloadsDir, '%(title)s.%(ext)s'),
+            '--newline'
+        ];
+        
+        // Add cookie support if available
+        if (cookieFilename) {
+            const cookiePath = path.join(cookiesDir, cookieFilename);
+            if (fs.existsSync(cookiePath)) {
+                downloadOptions.push('--cookies', cookiePath);
+                console.log('Using cookies for authentication');
+            } else {
+                console.log('Cookie file not found:', cookiePath);
+            }
         }
         
         const ytDlpProcess = spawn(ytDlpPath, downloadOptions);
@@ -201,11 +236,9 @@ function downloadVideo(url) {
             console.log(`yt-dlp process exited with code ${code}`);
             
             if (code === 0) {
-                // Success - find the downloaded file
                 try {
                     const files = fs.readdirSync(downloadsDir);
                     if (files.length > 0) {
-                        // Get the most recent file
                         const recentFiles = files
                             .map(file => ({ file, mtime: fs.statSync(path.join(downloadsDir, file)).mtime }))
                             .sort((a, b) => b.mtime - a.mtime);
@@ -226,7 +259,6 @@ function downloadVideo(url) {
                     reject(new Error('Could not read downloads directory: ' + fileError.message));
                 }
             } else {
-                // Create error file for user to see what went wrong
                 const timestamp = new Date().getTime();
                 const filename = `download-error-${timestamp}.txt`;
                 const filePath = path.join(downloadsDir, filename);
@@ -246,18 +278,18 @@ function downloadVideo(url) {
     });
 }
 
-// Download endpoints
+// Download endpoints with cookie support
 app.post('/api/download/youtube', async (req, res) => {
-    const { url } = req.body;
+    const { url, cookieFile } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
     }
     
-    console.log('POST /api/download/youtube - URL:', url);
+    console.log('POST /api/download/youtube - URL:', url, 'Cookie:', cookieFile || 'None');
     
     try {
-        const result = await downloadVideo(url);
+        const result = await downloadVideo(url, cookieFile);
         res.json(result);
     } catch (error) {
         console.error('YouTube download error:', error);
@@ -269,7 +301,7 @@ app.post('/api/download/youtube', async (req, res) => {
 });
 
 app.post('/api/download/instagram', async (req, res) => {
-    const { url } = req.body;
+    const { url, cookieFile } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
@@ -278,7 +310,7 @@ app.post('/api/download/instagram', async (req, res) => {
     console.log('POST /api/download/instagram - URL:', url);
     
     try {
-        const result = await downloadVideo(url);
+        const result = await downloadVideo(url, cookieFile);
         res.json(result);
     } catch (error) {
         console.error('Instagram download error:', error);
@@ -290,7 +322,7 @@ app.post('/api/download/instagram', async (req, res) => {
 });
 
 app.post('/api/download/tiktok', async (req, res) => {
-    const { url } = req.body;
+    const { url, cookieFile } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
@@ -299,7 +331,7 @@ app.post('/api/download/tiktok', async (req, res) => {
     console.log('POST /api/download/tiktok - URL:', url);
     
     try {
-        const result = await downloadVideo(url);
+        const result = await downloadVideo(url, cookieFile);
         res.json(result);
     } catch (error) {
         console.error('TikTok download error:', error);
@@ -311,7 +343,7 @@ app.post('/api/download/tiktok', async (req, res) => {
 });
 
 app.post('/api/download/twitter', async (req, res) => {
-    const { url } = req.body;
+    const { url, cookieFile } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
@@ -320,7 +352,7 @@ app.post('/api/download/twitter', async (req, res) => {
     console.log('POST /api/download/twitter - URL:', url);
     
     try {
-        const result = await downloadVideo(url);
+        const result = await downloadVideo(url, cookieFile);
         res.json(result);
     } catch (error) {
         console.error('Twitter download error:', error);
@@ -332,7 +364,7 @@ app.post('/api/download/twitter', async (req, res) => {
 });
 
 app.post('/api/download', async (req, res) => {
-    const { url } = req.body;
+    const { url, cookieFile } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
@@ -341,7 +373,7 @@ app.post('/api/download', async (req, res) => {
     console.log('POST /api/download - URL:', url);
     
     try {
-        const result = await downloadVideo(url);
+        const result = await downloadVideo(url, cookieFile);
         res.json(result);
     } catch (error) {
         console.error('Generic download error:', error);

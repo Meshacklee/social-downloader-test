@@ -95,16 +95,17 @@
             font-size: 18px;
         }
         
-        input {
+        input, select {
             width: 100%;
             padding: 15px;
             border: 2px solid #e9ecef;
             border-radius: 12px;
             font-size: 16px;
             transition: border-color 0.3s;
+            margin-bottom: 10px;
         }
         
-        input:focus {
+        input:focus, select:focus {
             outline: none;
             border-color: #667eea;
         }
@@ -130,6 +131,13 @@
         
         button:active {
             transform: translateY(0);
+        }
+        
+        .cookie-section {
+            background: #e9f7fe;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
         }
         
         .result {
@@ -210,6 +218,12 @@
             <!-- Platforms will be loaded here -->
         </div>
         
+        <div class="cookie-section">
+            <label for="cookieFile">Upload YouTube Cookies (Optional):</label>
+            <input type="file" id="cookieFile" accept=".txt">
+            <small>Upload cookies.txt file to access restricted YouTube content</small>
+        </div>
+        
         <div class="input-group">
             <label for="videoUrl">Paste Video URL:</label>
             <input type="url" id="videoUrl" placeholder="https://www.youtube.com/watch?v=... or https://www.instagram.com/p/...">
@@ -236,116 +250,119 @@
     </div>
 
     <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Load supported platforms
-        fetch('/api/platforms')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                const container = document.getElementById('platformsContainer');
-                container.innerHTML = data.platforms.map(platform => `
-                    <div class="platform" title="${platform.name}">
-                        <div class="platform-icon">${platform.icon}</div>
-                        <div class="platform-name">${platform.name}</div>
-                    </div>
-                `).join('');
-            })
-            .catch(error => {
-                console.log('Could not load platforms:', error);
-            });
+        let uploadedCookieFile = null;
         
-        document.getElementById('downloadBtn').addEventListener('click', async function() {
-            const url = document.getElementById('videoUrl').value;
-            
-            if (!url) {
-                alert('Please enter a video URL');
-                return;
-            }
-            
-            // Determine which endpoint to use
-            let endpoint = '/api/download';
-            if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                endpoint = '/api/download/youtube';
-            } else if (url.includes('instagram.com')) {
-                endpoint = '/api/download/instagram';
-            } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
-                endpoint = '/api/download/tiktok';
-            } else if (url.includes('twitter.com') || url.includes('x.com')) {
-                endpoint = '/api/download/twitter';
-            }
-            
-            // Show loading
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('result').style.display = 'none';
-            
-            try {
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ url })
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load supported platforms
+            fetch('/api/platforms')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('platformsContainer');
+                    container.innerHTML = data.platforms.map(platform => `
+                        <div class="platform" title="${platform.name}">
+                            <div class="platform-icon">${platform.icon}</div>
+                            <div class="platform-name">${platform.name}</div>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.log('Could not load platforms, using defaults');
                 });
-                
-                // Check if response is OK
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
-                }
-                
-                // Get response text first
-                const responseText = await response.text();
-                console.log('Raw response:', responseText); // Debug line
-                
-                // Check if response is empty
-                if (!responseText) {
-                    throw new Error('Empty response from server');
-                }
-                
-                // Try to parse JSON safely
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                } catch (parseError) {
-                    console.error('Invalid JSON response:', responseText);
-                    throw new Error('Invalid response from server: ' + responseText.substring(0, 100) + '...');
-                }
-                
-                if (data.success) {
-                    // Hide loading, show result
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('result').style.display = 'block';
+            
+            // Handle cookie file upload
+            document.getElementById('cookieFile').addEventListener('change', function(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    const formData = new FormData();
+                    formData.append('cookieFile', file);
                     
-                    // Update result content
-                    document.getElementById('title').textContent = data.title || 'Video Ready';
-                    
-                    // Set up REAL download button
-                    document.getElementById('finalDownloadBtn').onclick = function() {
-                        if (data.downloadUrl) {
-                            // Handle both absolute and relative URLs
-                            let downloadUrl = data.downloadUrl;
-                            if (!downloadUrl.startsWith('http')) {
-                                downloadUrl = window.location.origin + downloadUrl;
-                            }
-                            console.log('Opening download URL:', downloadUrl);
-                            window.open(downloadUrl, '_blank');
+                    fetch('/api/upload-cookie', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            uploadedCookieFile = data.filename;
+                            alert('Cookie file uploaded successfully! It will be used for YouTube downloads.');
                         } else {
-                            alert('Download URL not available');
+                            alert('Error uploading cookie file: ' + data.error);
                         }
-                    };
-                } else {
-                    throw new Error(data.error || 'Download failed');
+                    })
+                    .catch(error => {
+                        alert('Error uploading cookie file: ' + error.message);
+                    });
                 }
-            } catch (error) {
-                console.error('Download error:', error);
-                document.getElementById('loading').style.display = 'none';
-                alert('Error: ' + error.message);
-            }
+            });
+            
+            document.getElementById('downloadBtn').addEventListener('click', async function() {
+                const url = document.getElementById('videoUrl').value;
+                
+                if (!url) {
+                    alert('Please enter a video URL');
+                    return;
+                }
+                
+                // Determine which endpoint to use
+                let endpoint = '/api/download';
+                if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                    endpoint = '/api/download/youtube';
+                } else if (url.includes('instagram.com')) {
+                    endpoint = '/api/download/instagram';
+                } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
+                    endpoint = '/api/download/tiktok';
+                } else if (url.includes('twitter.com') || url.includes('x.com')) {
+                    endpoint = '/api/download/twitter';
+                }
+                
+                // Show loading
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('result').style.display = 'none';
+                
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            url,
+                            cookieFile: uploadedCookieFile
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Hide loading, show result
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('result').style.display = 'block';
+                        
+                        // Update result content
+                        document.getElementById('title').textContent = data.title || 'Video Ready';
+                        
+                        // Set up REAL download button
+                        document.getElementById('finalDownloadBtn').onclick = function() {
+                            if (data.downloadUrl) {
+                                let downloadUrl = data.downloadUrl;
+                                if (!downloadUrl.startsWith('http')) {
+                                    downloadUrl = window.location.origin + downloadUrl;
+                                }
+                                console.log('Opening download URL:', downloadUrl);
+                                window.open(downloadUrl, '_blank');
+                            } else {
+                                alert('Download URL not available');
+                            }
+                        };
+                    } else {
+                        throw new Error(data.error || 'Download failed');
+                    }
+                } catch (error) {
+                    document.getElementById('loading').style.display = 'none';
+                    alert('Error: ' + error.message);
+                }
+            });
         });
-    });
-</script>
+    </script>
 </body>
 </html>
