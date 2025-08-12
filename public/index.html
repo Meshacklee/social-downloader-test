@@ -239,7 +239,12 @@
     document.addEventListener('DOMContentLoaded', function() {
         // Load supported platforms
         fetch('/api/platforms')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 const container = document.getElementById('platformsContainer');
                 container.innerHTML = data.platforms.map(platform => `
@@ -250,7 +255,7 @@
                 `).join('');
             })
             .catch(error => {
-                console.log('Could not load platforms, using defaults');
+                console.log('Could not load platforms:', error);
             });
         
         document.getElementById('downloadBtn').addEventListener('click', async function() {
@@ -286,7 +291,28 @@
                     body: JSON.stringify({ url })
                 });
                 
-                const data = await response.json();
+                // Check if response is OK
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                }
+                
+                // Get response text first
+                const responseText = await response.text();
+                console.log('Raw response:', responseText); // Debug line
+                
+                // Check if response is empty
+                if (!responseText) {
+                    throw new Error('Empty response from server');
+                }
+                
+                // Try to parse JSON safely
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('Invalid JSON response:', responseText);
+                    throw new Error('Invalid response from server: ' + responseText.substring(0, 100) + '...');
+                }
                 
                 if (data.success) {
                     // Hide loading, show result
@@ -296,7 +322,7 @@
                     // Update result content
                     document.getElementById('title').textContent = data.title || 'Video Ready';
                     
-                    // Set up REAL download button - FIXED VERSION
+                    // Set up REAL download button
                     document.getElementById('finalDownloadBtn').onclick = function() {
                         if (data.downloadUrl) {
                             // Handle both absolute and relative URLs
@@ -314,6 +340,7 @@
                     throw new Error(data.error || 'Download failed');
                 }
             } catch (error) {
+                console.error('Download error:', error);
                 document.getElementById('loading').style.display = 'none';
                 alert('Error: ' + error.message);
             }
