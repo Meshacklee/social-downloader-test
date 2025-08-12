@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { exec } = require('child_process');
 
 console.log('=== SERVER STARTING ===');
 
@@ -21,6 +21,42 @@ if (!fs.existsSync(downloadsDir)) {
     fs.mkdirSync(downloadsDir, { recursive: true });
     console.log('Created downloads directory');
 }
+
+// Download yt-dlp if it doesn't exist
+function ensureYtDlp() {
+    return new Promise((resolve) => {
+        const ytDlpPath = path.join(__dirname, 'yt-dlp');
+        
+        if (fs.existsSync(ytDlpPath)) {
+            console.log('yt-dlp already exists');
+            resolve();
+            return;
+        }
+        
+        console.log('Downloading yt-dlp...');
+        const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
+        
+        exec(downloadCommand, (error, stdout, stderr) => {
+            if (error) {
+                console.error('Failed to download yt-dlp:', error);
+                console.log('Using simulation mode for downloads');
+            } else {
+                // Make it executable
+                fs.chmod(ytDlpPath, 0o755, (chmodError) => {
+                    if (chmodError) {
+                        console.error('Failed to make yt-dlp executable:', chmodError);
+                    } else {
+                        console.log('yt-dlp downloaded and made executable');
+                    }
+                });
+            }
+            resolve();
+        });
+    });
+}
+
+// Initialize yt-dlp on startup
+ensureYtDlp();
 
 // API Routes
 app.get('/api/platforms', (req, res) => {
@@ -47,13 +83,12 @@ app.get('/health', (req, res) => {
 // === REAL DOWNLOAD FUNCTION WITH YT-DLP ===
 function downloadVideo(url) {
     return new Promise((resolve, reject) => {
-        // Use downloaded yt-dlp
         const ytDlpPath = path.join(__dirname, 'yt-dlp');
         
         // Check if yt-dlp exists
         if (!fs.existsSync(ytDlpPath)) {
-            // If yt-dlp doesn't exist, simulate download for now
-            console.log('yt-dlp not found, simulating download for testing');
+            // Fallback to simulation if yt-dlp isn't available
+            console.log('yt-dlp not found, simulating download');
             setTimeout(() => {
                 const timestamp = new Date().getTime();
                 const filename = `video-${timestamp}.txt`;
@@ -75,6 +110,7 @@ function downloadVideo(url) {
         console.log('Starting real download for:', url);
         
         // Spawn yt-dlp process
+        const { spawn } = require('child_process');
         const ytDlpProcess = spawn(ytDlpPath, [
             url,
             '-f', 'bv*+ba/b',
