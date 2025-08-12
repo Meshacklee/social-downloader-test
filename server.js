@@ -2,6 +2,8 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const https = require('https');
+
 console.log('=== SERVER STARTING ===');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,6 +22,238 @@ if (!fs.existsSync(downloadsDir)) {
     console.log('Created downloads directory');
 }
 
+// Download yt-dlp if it doesn't exist
+async function ensureYtDlp() {
+    const ytDlpPath = path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+    
+    if (fs.existsSync(ytDlpPath)) {
+        console.log('yt-dlp found at:', ytDlpPath);
+        return ytDlpPath;
+    }
+    
+    console.log('Downloading yt-dlp...');
+    
+    const downloadUrl = process.platform === 'win32' 
+        ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+        : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+    
+    return new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(ytDlpPath);
+        
+        https.get(downloadUrl, (response) => {
+            if (response.statusCode !== 200) {
+                reject(new Error(`Failed to download yt-dlp: ${response.statusCode}`));
+                return;
+            }
+            
+            response.pipe(file);
+            
+            file.on('finish', () => {
+                file.close();
+                
+                // Make executable on Unix systems
+                if (process.platform !== 'win32') {
+                    fs.chmodSync(ytDlpPath, 0o755);
+                }
+                
+                console.log('yt-dlp downloaded successfully');
+                resolve(ytDlpPath);
+            });
+        }).on('error', (err) => {
+            fs.unlink(ytDlpPath, () => {}); // Delete incomplete file
+            reject(err);
+        });
+    });
+}
+
+// Get video info without downloading
+function getVideoInfo(url) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const ytDlpPath = await ensureYtDlp();
+            
+            console.log('Getting video info for:', url);
+            
+            const ytDlpProcess = spawn(ytDlpPath, [
+                url,
+                '--dump-json',
+                '--no-warnings',
+                '--no-check-certificate'
+            ]);
+            
+            let output = '';
+            let errorOutput = '';
+            
+            ytDlpProcess.stdout.on('data', (data) => {
+                output += data.toString();
+            });
+            
+            ytDlpProcess.stderr.on('data', (data) => {
+                errorOutput += data.toString();
+            });
+            
+            ytDlpProcess.on('close', (code) => {
+                if (code === 0 && output.trim()) {
+                    try {
+                        const videoInfo = JSON.parse(output.trim());
+                        resolve({
+                            title: videoInfo.title || 'Unknown Title',
+                            duration: videoInfo.duration || 0,
+                            uploader: videoInfo.uploader || 'Unknown',
+                            thumbnail: videoInfo.thumbnail || null,
+                            formats: videoInfo.formats?.length || 0
+                        });
+                    } catch (parseError) {
+                        reject(new Error('Failed to parse video info'));
+                    }
+                } else {
+                    reject(new Error(`Failed to get video info: ${errorOutput || 'Unknown error'}`));
+                }
+            });
+            
+            ytDlpProcess.on('error', (err) => {
+                reject(new Error(`Process error: ${err.message}`));
+            });
+            
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+// Enhanced download function with progress tracking
+function downloadVideo(url, options = {}) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const ytDlpPath = await ensureYtDlp();
+            
+            console.log('Starting download for:', url);
+            
+            // Build yt-dlp arguments
+            const args = [
+                url,
+                '--newline',
+                '--no-check-certificate',
+                '--no-warnings'
+            ];
+            
+            // Quality selection
+            if (options.quality === 'best') {
+                args.push('-f', 'best[ext=mp4]/best');
+            } else if (options.quality === 'audio') {
+                args.push('-f', 'bestaudio[ext=m4a]/bestaudio');
+            } else {
+                args.push('-f', 'bv*[height<=720]+ba/b[height<=720]/bv*+ba/b');
+            }
+            
+            // Output template
+            const outputTemplate = path.join(downloadsDir, '%(title)s.%(ext)s');
+            args.push('-o', outputTemplate);
+            
+            // Additional options
+            if (options.extractAudio) {
+                args.push('--extract-audio', '--audio-format', 'mp3');
+            }
+            
+            if (options.writeSubtitles) {
+                args.push('--write-subs', '--sub-lang', 'en');
+            }
+            
+            console.log('yt-dlp command:', ytDlpPath, args.join(' '));
+            
+            const ytDlpProcess = spawn(ytDlpPath, args);
+            
+            let output = '';
+            let errorOutput = '';
+            let downloadProgress = 0;
+            
+            ytDlpProcess.on('error', (err) => {
+                console.error('yt-dlp process error:', err);
+                reject(new Error(`Failed to start yt-dlp: ${err.message}`));
+            });
+            
+            ytDlpProcess.stdout.on('data', (data) => {
+                const dataStr = data.toString();
+                output += dataStr;
+                
+                // Parse download progress
+                const progressMatch = dataStr.match(/(\d+\.?\d*)%/);
+                if (progressMatch) {
+                    downloadProgress = parseFloat(progressMatch[1]);
+                    console.log(`Download progress: ${downloadProgress}%`);
+                }
+                
+                console.log('yt-dlp output:', dataStr.trim());
+            });
+            
+            ytDlpProcess.stderr.on('data', (data) => {
+                const dataStr = data.toString();
+                errorOutput += dataStr;
+                console.log('yt-dlp stderr:', dataStr.trim());
+            });
+            
+            ytDlpProcess.on('close', (code) => {
+                console.log(`yt-dlp process exited with code ${code}`);
+                
+                if (code === 0) {
+                    // Success - find the downloaded file
+                    try {
+                        const files = fs.readdirSync(downloadsDir)
+                            .filter(file => !file.startsWith('.'));
+                        
+                        if (files.length > 0) {
+                            // Get the most recent file
+                            const recentFiles = files
+                                .map(file => ({ 
+                                    file, 
+                                    mtime: fs.statSync(path.join(downloadsDir, file)).mtime,
+                                    size: fs.statSync(path.join(downloadsDir, file)).size
+                                }))
+                                .sort((a, b) => b.mtime - a.mtime);
+                            
+                            const recentFile = recentFiles[0];
+                            const downloadUrl = `/downloads/${encodeURIComponent(recentFile.file)}`;
+                            
+                            resolve({
+                                success: true,
+                                title: recentFile.file.replace(/\.[^/.]+$/, ""),
+                                downloadUrl: downloadUrl,
+                                filename: recentFile.file,
+                                fileSize: recentFile.size,
+                                progress: 100
+                            });
+                        } else {
+                            reject(new Error('No files found after download'));
+                        }
+                    } catch (fileError) {
+                        reject(new Error('Could not read downloads directory: ' + fileError.message));
+                    }
+                } else {
+                    // Handle specific error codes
+                    let errorMessage = `Download failed with code ${code}`;
+                    
+                    if (errorOutput.includes('Video unavailable')) {
+                        errorMessage = 'Video is unavailable or has been removed';
+                    } else if (errorOutput.includes('Private video')) {
+                        errorMessage = 'Video is private and cannot be downloaded';
+                    } else if (errorOutput.includes('Sign in to confirm your age')) {
+                        errorMessage = 'Video requires age verification';
+                    } else if (errorOutput.includes('This video is not available')) {
+                        errorMessage = 'Video is not available in your region';
+                    } else if (errorOutput.trim()) {
+                        errorMessage += `: ${errorOutput.trim()}`;
+                    }
+                    
+                    reject(new Error(errorMessage));
+                }
+            });
+            
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
 // API Routes
 app.get('/api/platforms', (req, res) => {
     console.log('GET /api/platforms');
@@ -29,6 +263,8 @@ app.get('/api/platforms', (req, res) => {
             { name: 'Instagram', key: 'instagram', icon: '📱' },
             { name: 'TikTok', key: 'tiktok', icon: '🎵' },
             { name: 'Twitter/X', key: 'twitter', icon: '🐦' },
+            { name: 'Facebook', key: 'facebook', icon: '📘' },
+            { name: 'Vimeo', key: 'vimeo', icon: '🎬' },
             { name: 'Other Platforms', key: 'generic', icon: '🔗' }
         ]
     });
@@ -38,186 +274,44 @@ app.get('/health', (req, res) => {
     console.log('GET /health');
     res.json({ 
         status: 'OK', 
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        ytdlp: fs.existsSync(path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'))
     });
 });
 
-// === ENHANCED DOWNLOAD FUNCTION WITH YT-DLP ===
-function downloadVideo(url, options = {}) {
-    return new Promise((resolve, reject) => {
-        // Default options
-        const {
-            format = 'bv*+ba/b',  // Best video + best audio / best combined
-            quality = 'best',    // Default quality
-            platform = 'generic' // Platform-specific options
-        } = options;
-        
-        // Try to find yt-dlp in different locations
-        const possiblePaths = [
-            path.join(__dirname, 'yt-dlp'),
-            path.join(__dirname, 'yt-dlp.exe'),
-            '/usr/local/bin/yt-dlp',
-            '/usr/bin/yt-dlp',
-            'yt-dlp'  // Try from PATH
-        ];
-        
-        let ytDlpPath = null;
-        for (const possiblePath of possiblePaths) {
-            try {
-                fs.accessSync(possiblePath, fs.constants.F_OK | fs.constants.X_OK);
-                ytDlpPath = possiblePath;
-                break;
-            } catch (err) {
-                // Continue to next path
-            }
-        }
-        
-        if (!ytDlpPath) {
-            return reject(new Error('yt-dlp executable not found. Please install yt-dlp first.'));
-        }
-        
-        console.log('Using yt-dlp at:', ytDlpPath);
-        console.log('Starting real download for:', url);
-        
-        // Generate a unique ID for this download
-        const downloadId = Date.now().toString(36) + Math.random().toString(36).substr(2);
-        const tempOutputPath = path.join(downloadsDir, `${downloadId}.%(title)s.%(ext)s`);
-        
-        // Build yt-dlp arguments based on platform and options
-        const args = [
-            url,
-            '-f', format,
-            '-o', tempOutputPath,
-            '--newline',
-            '--no-check-certificate',
-            '--no-playlist',
-            '--restrict-filenames'
-        ];
-        
-        // Add platform-specific options
-        switch (platform) {
-            case 'youtube':
-                args.push('--add-metadata', '--embed-thumbnail');
-                break;
-            case 'instagram':
-                args.push('--add-metadata');
-                break;
-            case 'tiktok':
-                args.push('--add-metadata');
-                break;
-            case 'twitter':
-                args.push('--add-metadata');
-                break;
-        }
-        
-        // Spawn yt-dlp process
-        const ytDlpProcess = spawn(ytDlpPath, args);
-        
-        let output = '';
-        let errorOutput = '';
-        let progress = 0;
-        let filename = '';
-        
-        ytDlpProcess.on('error', (err) => {
-            console.error('yt-dlp process error:', err);
-            reject(new Error(`Failed to start yt-dlp: ${err.message}`));
-        });
-        
-        ytDlpProcess.stdout.on('data', (data) => {
-            const outputStr = data.toString();
-            output += outputStr;
-            
-            // Parse progress from output
-            const progressMatch = outputStr.match(/\[download\]\s+(\d+\.\d+)%/);
-            if (progressMatch) {
-                progress = parseFloat(progressMatch[1]);
-            }
-            
-            // Extract filename if available
-            const filenameMatch = outputStr.match(/\[download\] Destination: (.+)$/m);
-            if (filenameMatch) {
-                filename = path.basename(filenameMatch[1]);
-            }
-            
-            console.log('yt-dlp output:', outputStr.trim());
-        });
-        
-        ytDlpProcess.stderr.on('data', (data) => {
-            errorOutput += data.toString();
-            console.log('yt-dlp error:', data.toString().trim());
-        });
-        
-        ytDlpProcess.on('close', (code) => {
-            console.log(`yt-dlp process exited with code ${code}`);
-            
-            if (code === 0) {
-                // Success - find the downloaded file
-                try {
-                    let finalFilename = filename;
-                    
-                    // If we don't have the filename from output, find the most recent file
-                    if (!finalFilename) {
-                        const files = fs.readdirSync(downloadsDir)
-                            .filter(file => file.startsWith(downloadId))
-                            .map(file => ({ 
-                                file, 
-                                mtime: fs.statSync(path.join(downloadsDir, file)).mtime 
-                            }))
-                            .sort((a, b) => b.mtime - a.mtime);
-                        
-                        if (files.length === 0) {
-                            return reject(new Error('Downloaded file not found'));
-                        }
-                        
-                        finalFilename = files[0].file;
-                    }
-                    
-                    // Rename file to remove download ID prefix
-                    const oldPath = path.join(downloadsDir, finalFilename);
-                    const newFilename = finalFilename.replace(`${downloadId}.`, '');
-                    const newPath = path.join(downloadsDir, newFilename);
-                    
-                    try {
-                        fs.renameSync(oldPath, newPath);
-                    } catch (renameErr) {
-                        console.warn('Could not rename file:', renameErr.message);
-                        // Continue with original filename if rename fails
-                    }
-                    
-                    const downloadUrl = `/downloads/${encodeURIComponent(newFilename)}`;
-                    
-                    resolve({
-                        success: true,
-                        title: newFilename.replace(/\.[^/.]+$/, ""),
-                        downloadUrl: downloadUrl,
-                        filename: newFilename,
-                        progress: 100
-                    });
-                } catch (fileError) {
-                    reject(new Error('Could not process downloaded file: ' + fileError.message));
-                }
-            } else {
-                reject(new Error(`Download failed with code ${code}: ${errorOutput || 'Unknown error'}`));
-            }
-        });
-    });
-}
-
-// Download endpoints
-app.post('/api/download/youtube', async (req, res) => {
-    const { url, quality = 'best' } = req.body;
+// Video info endpoint
+app.post('/api/info', async (req, res) => {
+    const { url } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
     }
     
-    console.log('POST /api/download/youtube - URL:', url);
+    console.log('POST /api/info - URL:', url);
     
     try {
-        const result = await downloadVideo(url, { 
-            platform: 'youtube',
-            quality
+        const info = await getVideoInfo(url);
+        res.json(info);
+    } catch (error) {
+        console.error('Video info error:', error);
+        res.status(500).json({ 
+            error: error.message
         });
+    }
+});
+
+// Enhanced download endpoints
+app.post('/api/download/youtube', async (req, res) => {
+    const { url, quality = 'best', extractAudio = false, writeSubtitles = false } = req.body;
+    
+    if (!url) {
+        return res.status(400).json({ error: 'URL is required' });
+    }
+    
+    console.log('POST /api/download/youtube - URL:', url, 'Quality:', quality);
+    
+    try {
+        const result = await downloadVideo(url, { quality, extractAudio, writeSubtitles });
         res.json(result);
     } catch (error) {
         console.error('YouTube download error:', error);
@@ -229,7 +323,7 @@ app.post('/api/download/youtube', async (req, res) => {
 });
 
 app.post('/api/download/instagram', async (req, res) => {
-    const { url } = req.body;
+    const { url, quality = 'best' } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
@@ -238,9 +332,7 @@ app.post('/api/download/instagram', async (req, res) => {
     console.log('POST /api/download/instagram - URL:', url);
     
     try {
-        const result = await downloadVideo(url, { 
-            platform: 'instagram'
-        });
+        const result = await downloadVideo(url, { quality });
         res.json(result);
     } catch (error) {
         console.error('Instagram download error:', error);
@@ -252,7 +344,7 @@ app.post('/api/download/instagram', async (req, res) => {
 });
 
 app.post('/api/download/tiktok', async (req, res) => {
-    const { url } = req.body;
+    const { url, quality = 'best' } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
@@ -261,9 +353,7 @@ app.post('/api/download/tiktok', async (req, res) => {
     console.log('POST /api/download/tiktok - URL:', url);
     
     try {
-        const result = await downloadVideo(url, { 
-            platform: 'tiktok'
-        });
+        const result = await downloadVideo(url, { quality });
         res.json(result);
     } catch (error) {
         console.error('TikTok download error:', error);
@@ -275,7 +365,7 @@ app.post('/api/download/tiktok', async (req, res) => {
 });
 
 app.post('/api/download/twitter', async (req, res) => {
-    const { url } = req.body;
+    const { url, quality = 'best' } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
@@ -284,9 +374,7 @@ app.post('/api/download/twitter', async (req, res) => {
     console.log('POST /api/download/twitter - URL:', url);
     
     try {
-        const result = await downloadVideo(url, { 
-            platform: 'twitter'
-        });
+        const result = await downloadVideo(url, { quality });
         res.json(result);
     } catch (error) {
         console.error('Twitter download error:', error);
@@ -297,8 +385,51 @@ app.post('/api/download/twitter', async (req, res) => {
     }
 });
 
-app.post('/api/download', async (req, res) => {
+app.post('/api/download/facebook', async (req, res) => {
     const { url, quality = 'best' } = req.body;
+    
+    if (!url) {
+        return res.status(400).json({ error: 'URL is required' });
+    }
+    
+    console.log('POST /api/download/facebook - URL:', url);
+    
+    try {
+        const result = await downloadVideo(url, { quality });
+        res.json(result);
+    } catch (error) {
+        console.error('Facebook download error:', error);
+        res.status(500).json({ 
+            error: error.message,
+            tip: 'Facebook videos might require login. Try a public video.'
+        });
+    }
+});
+
+app.post('/api/download/vimeo', async (req, res) => {
+    const { url, quality = 'best' } = req.body;
+    
+    if (!url) {
+        return res.status(400).json({ error: 'URL is required' });
+    }
+    
+    console.log('POST /api/download/vimeo - URL:', url);
+    
+    try {
+        const result = await downloadVideo(url, { quality });
+        res.json(result);
+    } catch (error) {
+        console.error('Vimeo download error:', error);
+        res.status(500).json({ 
+            error: error.message,
+            tip: 'Some Vimeo videos are password protected or private.'
+        });
+    }
+});
+
+// Generic download endpoint
+app.post('/api/download', async (req, res) => {
+    const { url, quality = 'best', extractAudio = false, writeSubtitles = false } = req.body;
     
     if (!url) {
         return res.status(400).json({ error: 'URL is required' });
@@ -307,10 +438,7 @@ app.post('/api/download', async (req, res) => {
     console.log('POST /api/download - URL:', url);
     
     try {
-        const result = await downloadVideo(url, { 
-            platform: 'generic',
-            quality
-        });
+        const result = await downloadVideo(url, { quality, extractAudio, writeSubtitles });
         res.json(result);
     } catch (error) {
         console.error('Generic download error:', error);
@@ -318,6 +446,83 @@ app.post('/api/download', async (req, res) => {
             error: error.message,
             tip: 'Try a different video URL or check if the content is publicly available.'
         });
+    }
+});
+
+// Batch download endpoint
+app.post('/api/download/batch', async (req, res) => {
+    const { urls, quality = 'best' } = req.body;
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+        return res.status(400).json({ error: 'URLs array is required' });
+    }
+    
+    console.log('POST /api/download/batch - URLs:', urls.length);
+    
+    const results = [];
+    
+    for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        try {
+            console.log(`Processing ${i + 1}/${urls.length}: ${url}`);
+            const result = await downloadVideo(url, { quality });
+            results.push({ url, ...result });
+        } catch (error) {
+            console.error(`Batch download error for ${url}:`, error);
+            results.push({ 
+                url, 
+                success: false, 
+                error: error.message 
+            });
+        }
+    }
+    
+    res.json({ 
+        success: true, 
+        results,
+        total: urls.length,
+        successful: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length
+    });
+});
+
+// List downloaded files
+app.get('/api/downloads', (req, res) => {
+    try {
+        const files = fs.readdirSync(downloadsDir)
+            .filter(file => !file.startsWith('.'))
+            .map(file => {
+                const filePath = path.join(downloadsDir, file);
+                const stats = fs.statSync(filePath);
+                return {
+                    filename: file,
+                    size: stats.size,
+                    created: stats.birthtime,
+                    downloadUrl: `/downloads/${encodeURIComponent(file)}`
+                };
+            })
+            .sort((a, b) => b.created - a.created);
+        
+        res.json({ files });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to list downloads' });
+    }
+});
+
+// Delete downloaded file
+app.delete('/api/downloads/:filename', (req, res) => {
+    const filename = decodeURIComponent(req.params.filename);
+    const filePath = path.join(downloadsDir, filename);
+    
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            res.json({ success: true, message: 'File deleted' });
+        } else {
+            res.status(404).json({ error: 'File not found' });
+        }
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete file' });
     }
 });
 
@@ -346,6 +551,15 @@ app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
     res.status(500).json({ error: 'Internal server error' });
 });
+
+// Initialize yt-dlp on startup
+ensureYtDlp()
+    .then((path) => {
+        console.log('yt-dlp ready at:', path);
+    })
+    .catch((error) => {
+        console.error('Failed to initialize yt-dlp:', error);
+    });
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);
