@@ -4,8 +4,8 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Serve static files
-app.use(express.static('public'));
+// Serve static files from public folder
+app.use(express.static(path.join(__dirname, 'public')));
 
 // API Routes
 app.get('/api/platforms', (req, res) => {
@@ -26,19 +26,16 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Serve main page
+// Serve main page for root route
 app.get('/', (req, res) => {
     console.log('GET /');
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Catch all 404s
-app.use('*', (req, res) => {
-    console.log('404 for:', req.path);
-    res.status(404).json({ 
-        error: 'Not found',
-        path: req.path
-    });
+// Serve index.html for any other routes (for SPA support)
+app.get('*', (req, res) => {
+    console.log('GET * (fallback)', req.path);
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
