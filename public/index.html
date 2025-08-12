@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Downloader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            text-align: left;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>📥 Test Downloader</h1>
+    <p>Testing minimal setup to fix 404 errors</p>
+    
+    <button onclick="testApi()">Test API</button>
+    <button onclick="testHealth()">Test Health</button>
+    
+    <div id="result">Click a button to test</div>
+
+    <script>
+        async function testApi() {
+            const result = document.getElementById('result');
+            result.innerHTML = 'Testing API...';
+            
+            try {
+                const response = await fetch('/api/platforms');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                result.innerHTML = '✅ API Response:\n' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                result.innerHTML = '❌ API Error: ' + error.message;
+                console.error('API Error:', error);
+            }
+        }
+        
+        async function testHealth() {
+            const result = document.getElementById('result');
+            result.innerHTML = 'Testing Health...';
+            
+            try {
+                const response = await fetch('/health');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                result.innerHTML = '✅ Health Response:\n' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                result.innerHTML = '❌ Health Error: ' + error.message;
+                console.error('Health Error:', error);
+            }
+        }
+    </script>
+</body>
+</html>
