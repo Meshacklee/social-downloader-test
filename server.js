@@ -96,7 +96,7 @@ app.get('/health', (req, res) => {
     });
 });
 
-// === DOWNLOAD FUNCTION WITH SAFETY CHECKS ===
+// === DOWNLOAD FUNCTION WITH IMPROVED YOUTUBE HANDLING ===
 function downloadVideo(url) {
     return new Promise((resolve, reject) => {
         // If real downloads aren't enabled, simulate
@@ -148,15 +148,36 @@ function downloadVideo(url) {
         
         console.log('Starting real download for:', url);
         
-        // Spawn yt-dlp process
+        // Spawn yt-dlp process with improved options
         const { spawn } = require('child_process');
-        const ytDlpProcess = spawn(ytDlpPath, [
-            url,
-            '-f', 'bv*+ba/b',
-            '-o', path.join(downloadsDir, '%(title)s.%(ext)s'),
-            '--newline',
-            '--no-check-certificate'
-        ]);
+        
+        // Determine if this is a YouTube URL and apply specific options
+        let downloadOptions;
+        if (url.includes('youtube.com') || url.includes('youtu.be')) {
+            // YouTube-specific options for better handling
+            downloadOptions = [
+                url,
+                '--no-check-certificate',
+                '--socket-timeout', '30',
+                '--retries', '3',
+                '-f', 'bv*+ba/b',
+                '-o', path.join(downloadsDir, '%(title)s.%(ext)s'),
+                '--newline'
+            ];
+        } else {
+            // Generic options for other platforms
+            downloadOptions = [
+                url,
+                '--no-check-certificate',
+                '--socket-timeout', '30',
+                '--retries', '3',
+                '-f', 'bv*+ba/b',
+                '-o', path.join(downloadsDir, '%(title)s.%(ext)s'),
+                '--newline'
+            ];
+        }
+        
+        const ytDlpProcess = spawn(ytDlpPath, downloadOptions);
         
         let output = '';
         let errorOutput = '';
