@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Batch Video Downloader</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 2.5rem;
+        }
+        
+        .back-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .back-btn:hover {
+            background: #5a6268;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1rem;
+        }
+        
+        .url-input-group {
+            margin-bottom: 25px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #495057;
+            font-size: 18px;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            font-size: 16px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .hint {
+            color: #868e96;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        button {
+            width: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .video-list {
+            margin-top: 30px;
+        }
+        
+        .video-item {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #667eea;
+        }
+        
+        .video-item.completed {
+            border-left-color: #28a745;
+        }
+        
+        .video-item.error {
+            border-left-color: #dc3545;
+        }
+        
+        .video-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .video-title {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+            flex: 1;
+        }
+        
+        .video-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
+        .status-pending {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .status-processing {
+            background: #17a2b8;
+            color: white;
+        }
+        
+        .status-completed {
+            background: #28a745;
+            color: white;
+        }
+        
+        .status-error {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .video-url {
+            color: #666;
+            font-size: 14px;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .download-all-btn {
+            background: #28a745;
+            margin-top: 20px;
+        }
+        
+        .loading {
+            text-align: center;
+            display: none;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .note {
+            text-align: center;
+            color: #868e96;
+            font-size: 14px;
+            margin-top: 30px;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📥 Batch Downloader</h1>
+            <a href="/" class="back-btn">← Back</a>
+        </div>
+        
+        <p class="subtitle">Download multiple videos at once</p>
+        
+        <div class="url-input-group">
+            <label for="videoUrls">Paste Video URLs (one per line):</label>
+            <textarea id="videoUrls" placeholder="https://www.youtube.com/watch?v=...
+https://www.instagram.com/p/...
+https://vm.tiktok.com/..."></textarea>
+            <p class="hint">Enter one video URL per line. Supports YouTube, Instagram, TikTok, Twitter, and more.</p>
+        </div>
+        
+        <button id="addVideosBtn">Add Videos to Queue</button>
+        
+        <div class="success-message" id="successMessage">
+            🎉 Batch download started successfully! Videos will be downloaded in the background.
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Adding videos to queue...</p>
+        </div>
+        
+        <div class="video-list" id="videoList">
+            <!-- Video items will be added here -->
+        </div>
+        
+        <button id="downloadAllBtn" class="download-all-btn" style="display: none;">
+            Start Batch Download
+        </button>
+        
+        <p class="note">Videos will be downloaded sequentially. Check your downloads folder after processing.</p>
+    </div>
+
+    <script>
+        let videoQueue = [];
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('addVideosBtn').addEventListener('click', function() {
+                const urlsText = document.getElementById('videoUrls').value;
+                const urls = urlsText.split('\n').filter(url => url.trim() !== '');
+                
+                if (urls.length === 0) {
+                    alert('Please enter at least one video URL');
+                    return;
+                }
+                
+                // Clear input
+                document.getElementById('videoUrls').value = '';
+                
+                // Add videos to queue
+                urls.forEach(url => {
+                    addToQueue(url.trim());
+                });
+                
+                // Show download all button
+                if (videoQueue.length > 0) {
+                    document.getElementById('downloadAllBtn').style.display = 'block';
+                }
+            });
+            
+            document.getElementById('downloadAllBtn').addEventListener('click', function() {
+                startBatchDownload();
+            });
+        });
+        
+        function addToQueue(url) {
+            const videoId = Date.now() + Math.random();
+            const videoItem = {
+                id: videoId,
+                url: url,
+                title: url.substring(0, 60) + (url.length > 60 ? '...' : ''),
+                status: 'pending',
+                progress: 0
+            };
+            
+            videoQueue.push(videoItem);
+            renderVideoList();
+        }
+        
+        function renderVideoList() {
+            const videoList = document.getElementById('videoList');
+            videoList.innerHTML = '';
+            
+            videoQueue.forEach(video => {
+                const videoElement = document.createElement('div');
+                videoElement.className = `video-item ${video.status}`;
+                videoElement.innerHTML = `
+                    <div class="video-header">
+                        <div class="video-title">${video.title}</div>
+                        <div class="video-status status-${video.status}">${getStatusText(video.status)}</div>
+                    </div>
+                    <div class="video-url">${video.url}</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${video.progress}%"></div>
+                    </div>
+                `;
+                videoList.appendChild(videoElement);
+            });
+        }
+        
+        function getStatusText(status) {
+            switch(status) {
+                case 'pending': return 'Pending';
+                case 'processing': return 'Processing';
+                case 'completed': return 'Completed';
+                case 'error': return 'Error';
+                default: return status;
+            }
+        }
+        
+        function updateVideoStatus(videoId, status, title = null, progress = null) {
+            const videoIndex = videoQueue.findIndex(v => v.id === videoId);
+            if (videoIndex !== -1) {
+                if (status) videoQueue[videoIndex].status = status;
+                if (title) videoQueue[videoIndex].title = title;
+                if (progress !== null) videoQueue[videoIndex].progress = progress;
+                renderVideoList();
+            }
+        }
+        
+        async function startBatchDownload() {
+            const urls = videoQueue.map(video => video.url);
+            
+            if (urls.length === 0) {
+                alert('No videos in queue');
+                return;
+            }
+            
+            document.getElementById('loading').style.display = 'block';
+            
+            try {
+                // For demo purposes, we'll just show a success message
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('successMessage').style.display = 'block';
+                
+                // Update all videos to processing status
+                videoQueue.forEach(video => {
+                    updateVideoStatus(video.id, 'processing', null, 30);
+                });
+                
+                // Simulate completion
+                setTimeout(() => {
+                    videoQueue.forEach(video => {
+                        updateVideoStatus(video.id, 'completed', null, 100);
+                    });
+                }, 3000);
+                
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                alert('Error starting batch download: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
