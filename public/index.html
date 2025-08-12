@@ -236,84 +236,89 @@
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Load supported platforms
-            fetch('/api/platforms')
-                .then(response => response.json())
-                .then(data => {
-                    const container = document.getElementById('platformsContainer');
-                    container.innerHTML = data.platforms.map(platform => `
-                        <div class="platform" title="${platform.name}">
-                            <div class="platform-icon">${platform.icon}</div>
-                            <div class="platform-name">${platform.name}</div>
-                        </div>
-                    `).join('');
-                })
-                .catch(error => {
-                    console.log('Could not load platforms, using defaults');
-                });
-            
-            document.getElementById('downloadBtn').addEventListener('click', async function() {
-                const url = document.getElementById('videoUrl').value;
-                
-                if (!url) {
-                    alert('Please enter a video URL');
-                    return;
-                }
-                
-                // Determine which endpoint to use
-                let endpoint = '/api/download';
-                if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                    endpoint = '/api/download/youtube';
-                } else if (url.includes('instagram.com')) {
-                    endpoint = '/api/download/instagram';
-                } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
-                    endpoint = '/api/download/tiktok';
-                } else if (url.includes('twitter.com') || url.includes('x.com')) {
-                    endpoint = '/api/download/twitter';
-                }
-                
-                // Show loading
-                document.getElementById('loading').style.display = 'block';
-                document.getElementById('result').style.display = 'none';
-                
-                try {
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ url })
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        // Hide loading, show result
-                        document.getElementById('loading').style.display = 'none';
-                        document.getElementById('result').style.display = 'block';
-                        
-                        // Update result content
-                        document.getElementById('title').textContent = data.title || 'Video Ready';
-                        
-                        // Set up REAL download button
-                        document.getElementById('finalDownloadBtn').onclick = function() {
-                            if (data.downloadUrl) {
-                                // This will actually download the real file!
-                                window.open(data.downloadUrl, '_blank');
-                            } else {
-                                alert('Download URL not available');
-                            }
-                        };
-                    } else {
-                        throw new Error(data.error || 'Download failed');
-                    }
-                } catch (error) {
-                    document.getElementById('loading').style.display = 'none';
-                    alert('Error: ' + error.message);
-                }
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load supported platforms
+        fetch('/api/platforms')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('platformsContainer');
+                container.innerHTML = data.platforms.map(platform => `
+                    <div class="platform" title="${platform.name}">
+                        <div class="platform-icon">${platform.icon}</div>
+                        <div class="platform-name">${platform.name}</div>
+                    </div>
+                `).join('');
+            })
+            .catch(error => {
+                console.log('Could not load platforms, using defaults');
             });
+        
+        document.getElementById('downloadBtn').addEventListener('click', async function() {
+            const url = document.getElementById('videoUrl').value;
+            
+            if (!url) {
+                alert('Please enter a video URL');
+                return;
+            }
+            
+            // Determine which endpoint to use
+            let endpoint = '/api/download';
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                endpoint = '/api/download/youtube';
+            } else if (url.includes('instagram.com')) {
+                endpoint = '/api/download/instagram';
+            } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
+                endpoint = '/api/download/tiktok';
+            } else if (url.includes('twitter.com') || url.includes('x.com')) {
+                endpoint = '/api/download/twitter';
+            }
+            
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ url })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Hide loading, show result
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('result').style.display = 'block';
+                    
+                    // Update result content
+                    document.getElementById('title').textContent = data.title || 'Video Ready';
+                    
+                    // Set up REAL download button - FIXED VERSION
+                    document.getElementById('finalDownloadBtn').onclick = function() {
+                        if (data.downloadUrl) {
+                            // Handle both absolute and relative URLs
+                            let downloadUrl = data.downloadUrl;
+                            if (!downloadUrl.startsWith('http')) {
+                                downloadUrl = window.location.origin + downloadUrl;
+                            }
+                            console.log('Opening download URL:', downloadUrl);
+                            window.open(downloadUrl, '_blank');
+                        } else {
+                            alert('Download URL not available');
+                        }
+                    };
+                } else {
+                    throw new Error(data.error || 'Download failed');
+                }
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                alert('Error: ' + error.message);
+            }
         });
-    </script>
+    });
+</script>
 </body>
 </html>
