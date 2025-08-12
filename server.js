@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 
 console.log('=== SERVER STARTING ===');
 
@@ -21,6 +21,54 @@ if (!fs.existsSync(downloadsDir)) {
     fs.mkdirSync(downloadsDir, { recursive: true });
     console.log('Created downloads directory');
 }
+
+// Download yt-dlp if it doesn't exist
+function ensureYtDlp() {
+    return new Promise((resolve, reject) => {
+        const ytDlpPath = path.join(__dirname, 'yt-dlp');
+        
+        if (fs.existsSync(ytDlpPath)) {
+            console.log('yt-dlp already exists');
+            resolve();
+            return;
+        }
+        
+        console.log('Downloading yt-dlp...');
+        const downloadCommand = process.platform === 'win32' 
+            ? 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -o yt-dlp.exe'
+            : 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
+        
+        exec(downloadCommand, (error, stdout, stderr) => {
+            if (error) {
+                console.error('Failed to download yt-dlp:', error);
+                // Fallback to simulation mode
+                console.log('Using simulation mode for downloads');
+                resolve();
+                return;
+            }
+            
+            // Make it executable (non-Windows only)
+            if (process.platform !== 'win32') {
+                fs.chmod(ytDlpPath, 0o755, (chmodError) => {
+                    if (chmodError) {
+                        console.error('Failed to make yt-dlp executable:', chmodError);
+                    } else {
+                        console.log('yt-dlp downloaded and made executable');
+                    }
+                    resolve();
+                });
+            } else {
+                console.log('yt-dlp.exe downloaded');
+                resolve();
+            }
+        });
+    });
+}
+
+// Initialize yt-dlp on startup
+ensureYtDlp().catch(error => {
+    console.error('Failed to ensure yt-dlp is available:', error);
+});
 
 // API Routes
 app.get('/api/platforms', (req, res) => {
@@ -47,18 +95,17 @@ app.get('/health', (req, res) => {
 // === REAL DOWNLOAD FUNCTION WITH YT-DLP ===
 function downloadVideo(url) {
     return new Promise((resolve, reject) => {
-        // Use downloaded yt-dlp (we'll handle this in a moment)
-        const ytDlpPath = path.join(__dirname, 'yt-dlp');
+        // Determine yt-dlp path based on platform
+        const isWindows = process.platform === 'win32';
+        const ytDlpPath = path.join(__dirname, isWindows ? 'yt-dlp.exe' : 'yt-dlp');
         
-        // For now, let's check if yt-dlp exists
+        // Check if yt-dlp exists
         if (!fs.existsSync(ytDlpPath)) {
-            // If yt-dlp doesn't exist, simulate download for testing
+            // Fallback to simulation if yt-dlp isn't available
             console.log('yt-dlp not found, simulating download');
             setTimeout(() => {
                 const sampleFilePath = path.join(downloadsDir, 'sample-video.txt');
-                if (!fs.existsSync(sampleFilePath)) {
-                    fs.writeFileSync(sampleFilePath, 'This is a sample video file. In a real app, this would be an actual video downloaded by yt-dlp from: ' + url);
-                }
+                fs.writeFileSync(sampleFilePath, 'This is a sample video file. In a real app, this would be an actual video downloaded by yt-dlp from: ' + url);
                 
                 resolve({
                     success: true,
@@ -70,7 +117,7 @@ function downloadVideo(url) {
             return;
         }
         
-        console.log('Starting download for:', url);
+        console.log('Starting real download for:', url);
         
         // Spawn yt-dlp process
         const ytDlpProcess = spawn(ytDlpPath, [
