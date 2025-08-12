@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { exec } = require('child_process');
 
 console.log('=== SERVER STARTING ===');
 
@@ -26,6 +26,49 @@ if (!fs.existsSync(downloadsDir)) {
 const realDownloadsEnabled = fs.existsSync(path.join(__dirname, 'ENABLE_REAL_DOWNLOADS'));
 console.log('Real downloads enabled:', realDownloadsEnabled);
 
+// Download yt-dlp if it doesn't exist and real downloads are enabled
+function ensureYtDlp() {
+    return new Promise((resolve) => {
+        // Only download if real downloads are enabled
+        if (!realDownloadsEnabled) {
+            console.log('Real downloads not enabled, skipping yt-dlp setup');
+            resolve();
+            return;
+        }
+        
+        const ytDlpPath = path.join(__dirname, 'yt-dlp');
+        
+        if (fs.existsSync(ytDlpPath)) {
+            console.log('yt-dlp already exists');
+            resolve();
+            return;
+        }
+        
+        console.log('Downloading yt-dlp...');
+        const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
+        
+        exec(downloadCommand, (error, stdout, stderr) => {
+            if (error) {
+                console.error('Failed to download yt-dlp:', error);
+                console.log('Real downloads will fall back to simulation');
+            } else {
+                // Make it executable
+                fs.chmod(ytDlpPath, 0o755, (chmodError) => {
+                    if (chmodError) {
+                        console.error('Failed to make yt-dlp executable:', chmodError);
+                    } else {
+                        console.log('yt-dlp downloaded and made executable');
+                    }
+                });
+            }
+            resolve();
+        });
+    });
+}
+
+// Initialize yt-dlp on startup (but don't wait for it to complete)
+ensureYtDlp();
+
 // API Routes
 app.get('/api/platforms', (req, res) => {
     console.log('GET /api/platforms');
@@ -42,10 +85,14 @@ app.get('/api/platforms', (req, res) => {
 
 app.get('/health', (req, res) => {
     console.log('GET /health');
+    const ytDlpPath = path.join(__dirname, 'yt-dlp');
+    const ytDlpExists = fs.existsSync(ytDlpPath);
+    
     res.json({ 
         status: 'OK', 
         timestamp: new Date().toISOString(),
-        realDownloads: realDownloadsEnabled
+        realDownloads: realDownloadsEnabled,
+        ytDlpInstalled: ytDlpExists
     });
 });
 
@@ -102,6 +149,7 @@ function downloadVideo(url) {
         console.log('Starting real download for:', url);
         
         // Spawn yt-dlp process
+        const { spawn } = require('child_process');
         const ytDlpProcess = spawn(ytDlpPath, [
             url,
             '-f', 'bv*+ba/b',
