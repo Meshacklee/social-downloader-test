@@ -2,9 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
-
 console.log('=== SERVER STARTING ===');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -24,7 +22,7 @@ if (!fs.existsSync(downloadsDir)) {
 
 // Download yt-dlp if it doesn't exist
 function ensureYtDlp() {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const ytDlpPath = path.join(__dirname, 'yt-dlp');
         
         if (fs.existsSync(ytDlpPath)) {
@@ -34,56 +32,40 @@ function ensureYtDlp() {
         }
         
         console.log('Downloading yt-dlp...');
-        const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
+        const downloadCommand = process.platform === 'win32' 
+            ? 'powershell -Command "Invoke-WebRequest -Uri https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile yt-dlp.exe"'
+            : 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
         
         exec(downloadCommand, (error, stdout, stderr) => {
             if (error) {
                 console.error('Failed to download yt-dlp:', error);
                 console.log('Using simulation mode for downloads');
-            } else {
-                // Make it executable
+                resolve(); // Continue even if download fails
+                return;
+            }
+            
+            // Make it executable (not needed on Windows)
+            if (process.platform !== 'win32') {
                 fs.chmod(ytDlpPath, 0o755, (chmodError) => {
                     if (chmodError) {
                         console.error('Failed to make yt-dlp executable:', chmodError);
                     } else {
                         console.log('yt-dlp downloaded and made executable');
                     }
+                    resolve();
                 });
+            } else {
+                console.log('yt-dlp downloaded successfully');
+                resolve();
             }
-            resolve();
         });
     });
 }
 
-// Initialize yt-dlp on startup
-ensureYtDlp();
-
-// API Routes
-app.get('/api/platforms', (req, res) => {
-    console.log('GET /api/platforms');
-    res.json({
-        platforms: [
-            { name: 'YouTube', key: 'youtube', icon: '📺' },
-            { name: 'Instagram', key: 'instagram', icon: '📱' },
-            { name: 'TikTok', key: 'tiktok', icon: '🎵' },
-            { name: 'Twitter/X', key: 'twitter', icon: '🐦' },
-            { name: 'Other Platforms', key: 'generic', icon: '🔗' }
-        ]
-    });
-});
-
-app.get('/health', (req, res) => {
-    console.log('GET /health');
-    res.json({ 
-        status: 'OK', 
-        timestamp: new Date().toISOString()
-    });
-});
-
 // === REAL DOWNLOAD FUNCTION WITH YT-DLP ===
 function downloadVideo(url) {
     return new Promise((resolve, reject) => {
-        const ytDlpPath = path.join(__dirname, 'yt-dlp');
+        const ytDlpPath = path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
         
         // Check if yt-dlp exists
         if (!fs.existsSync(ytDlpPath)) {
@@ -111,12 +93,13 @@ function downloadVideo(url) {
         
         // Spawn yt-dlp process
         const { spawn } = require('child_process');
+        const outputTemplate = path.join(downloadsDir, '%(title)s.%(ext)s');
         const ytDlpProcess = spawn(ytDlpPath, [
             url,
-            '-f', 'bv*+ba/b',
-            '-o', path.join(downloadsDir, '%(title)s.%(ext)s'),
-            '--newline',
-            '--no-check-certificate'
+            '-f', 'best[ext=mp4]/best', // More compatible format selection
+            '-o', outputTemplate,
+            '--no-check-certificate',
+            '--no-playlist' // Avoid downloading playlists
         ]);
         
         let output = '';
@@ -163,149 +146,118 @@ function downloadVideo(url) {
                         reject(new Error('No files found after download'));
                     }
                 } catch (fileError) {
+                    console.error('Error reading downloads directory:', fileError);
                     reject(new Error('Could not read downloads directory: ' + fileError.message));
                 }
             } else {
-                reject(new Error(`Download failed with code ${code}: ${errorOutput || 'Unknown error'}`));
+                // Truncate error message to avoid oversized responses
+                const errorMessage = errorOutput.length > 500 
+                    ? errorOutput.substring(0, 500) + '...' 
+                    : errorOutput;
+                reject(new Error(`Download failed with code ${code}: ${errorMessage || 'Unknown error'}`));
             }
         });
     });
 }
 
-// Download endpoints
-app.post('/api/download/youtube', async (req, res) => {
-    const { url } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download/youtube - URL:', url);
-    
-    try {
-        const result = await downloadVideo(url);
-        res.json(result);
-    } catch (error) {
-        console.error('YouTube download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Try a different YouTube video or check if the video is available.'
+// Initialize yt-dlp on startup and then start server
+ensureYtDlp().then(() => {
+    // API Routes
+    app.get('/api/platforms', (req, res) => {
+        console.log('GET /api/platforms');
+        res.json({
+            platforms: [
+                { name: 'YouTube', key: 'youtube', icon: '📺' },
+                { name: 'Instagram', key: 'instagram', icon: '📱' },
+                { name: 'TikTok', key: 'tiktok', icon: '🎵' },
+                { name: 'Twitter/X', key: 'twitter', icon: '🐦' },
+                { name: 'Other Platforms', key: 'generic', icon: '🔗' }
+            ]
         });
-    }
-});
-
-app.post('/api/download/instagram', async (req, res) => {
-    const { url } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download/instagram - URL:', url);
-    
-    try {
-        const result = await downloadVideo(url);
-        res.json(result);
-    } catch (error) {
-        console.error('Instagram download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Instagram often blocks automated downloads. Try a public video.'
-        });
-    }
-});
-
-app.post('/api/download/tiktok', async (req, res) => {
-    const { url } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download/tiktok - URL:', url);
-    
-    try {
-        const result = await downloadVideo(url);
-        res.json(result);
-    } catch (error) {
-        console.error('TikTok download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Try a different TikTok video or check if the video is public.'
-        });
-    }
-});
-
-app.post('/api/download/twitter', async (req, res) => {
-    const { url } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download/twitter - URL:', url);
-    
-    try {
-        const result = await downloadVideo(url);
-        res.json(result);
-    } catch (error) {
-        console.error('Twitter download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Try a different Twitter video or check if the video is public.'
-        });
-    }
-});
-
-app.post('/api/download', async (req, res) => {
-    const { url } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download - URL:', url);
-    
-    try {
-        const result = await downloadVideo(url);
-        res.json(result);
-    } catch (error) {
-        console.error('Generic download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Try a different video URL or check if the content is publicly available.'
-        });
-    }
-});
-
-// Serve main pages
-app.get('/', (req, res) => {
-    console.log('GET / - Serving main page');
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.get('/batch.html', (req, res) => {
-    console.log('GET /batch.html');
-    res.sendFile(path.join(__dirname, 'public', 'batch.html'));
-});
-
-// Catch all 404s
-app.use('*', (req, res) => {
-    console.log('404 for:', req.path);
-    res.status(404).json({ 
-        error: 'Not found',
-        path: req.path
     });
-});
 
-// Global error handler
-app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-});
+    app.get('/health', (req, res) => {
+        console.log('GET /health');
+        res.json({ 
+            status: 'OK', 
+            timestamp: new Date().toISOString()
+        });
+    });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-});
+    // Generic download endpoint that handles all platforms
+    app.post('/api/download', async (req, res) => {
+        const { url, platform } = req.body;
+        
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+        
+        console.log(`POST /api/download - Platform: ${platform || 'generic'}, URL: ${url}`);
+        
+        try {
+            const result = await downloadVideo(url);
+            res.json(result);
+        } catch (error) {
+            console.error(`${platform || 'Generic'} download error:`, error);
+            res.status(500).json({ 
+                error: error.message,
+                tip: 'Try a different video URL or check if the content is publicly available.'
+            });
+        }
+    });
 
-console.log('=== SERVER SETUP COMPLETE ===');
+    // Platform-specific endpoints (all redirect to generic)
+    app.post('/api/download/youtube', (req, res) => {
+        req.body.platform = 'youtube';
+        app._router.handle(req, res);
+    });
+
+    app.post('/api/download/instagram', (req, res) => {
+        req.body.platform = 'instagram';
+        app._router.handle(req, res);
+    });
+
+    app.post('/api/download/tiktok', (req, res) => {
+        req.body.platform = 'tiktok';
+        app._router.handle(req, res);
+    });
+
+    app.post('/api/download/twitter', (req, res) => {
+        req.body.platform = 'twitter';
+        app._router.handle(req, res);
+    });
+
+    // Serve main pages
+    app.get('/', (req, res) => {
+        console.log('GET / - Serving main page');
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
+
+    app.get('/batch.html', (req, res) => {
+        console.log('GET /batch.html');
+        res.sendFile(path.join(__dirname, 'public', 'batch.html'));
+    });
+
+    // Catch all 404s
+    app.use('*', (req, res) => {
+        console.log('404 for:', req.path);
+        res.status(404).json({ 
+            error: 'Not found',
+            path: req.path
+        });
+    });
+
+    // Global error handler
+    app.use((err, req, res, next) => {
+        console.error('Unhandled error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    });
+
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+    });
+    console.log('=== SERVER SETUP COMPLETE ===');
+}).catch(error => {
+    console.error('Failed to initialize server:', error);
+    process.exit(1);
+});
