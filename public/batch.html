@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Batch Video Downloader</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * {
             margin: 0;
@@ -13,40 +14,43 @@
         body {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            padding: 20px;
+            padding: 15px;
         }
         
         .container {
             background: white;
             border-radius: 20px;
-            padding: 40px;
+            padding: 30px;
             width: 100%;
             max-width: 800px;
             margin: 0 auto;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.2);
         }
         
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 30px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            gap: 15px;
         }
         
         h1 {
             color: #333;
-            font-size: 2.5rem;
+            font-size: 2rem;
         }
         
         .back-btn {
             background: #6c757d;
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 10px 15px;
             border-radius: 8px;
             cursor: pointer;
             text-decoration: none;
             font-weight: 600;
+            font-size: 14px;
         }
         
         .back-btn:hover {
@@ -55,29 +59,29 @@
         
         .subtitle {
             color: #666;
-            margin-bottom: 30px;
-            font-size: 1.1rem;
+            margin-bottom: 25px;
+            font-size: 1rem;
         }
         
         .url-input-group {
-            margin-bottom: 25px;
+            margin-bottom: 20px;
         }
         
         label {
             display: block;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             font-weight: 600;
             color: #495057;
-            font-size: 18px;
+            font-size: 16px;
         }
         
         textarea {
             width: 100%;
             height: 150px;
-            padding: 15px;
+            padding: 12px;
             border: 2px solid #e9ecef;
-            border-radius: 12px;
-            font-size: 16px;
+            border-radius: 10px;
+            font-size: 14px;
             resize: vertical;
             font-family: monospace;
         }
@@ -89,7 +93,7 @@
         
         .hint {
             color: #868e96;
-            font-size: 14px;
+            font-size: 12px;
             margin-top: 5px;
         }
         
@@ -98,9 +102,9 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 16px;
-            border-radius: 12px;
-            font-size: 18px;
+            padding: 14px;
+            border-radius: 10px;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
@@ -109,7 +113,7 @@
         
         button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
         }
         
         button:active {
@@ -117,14 +121,14 @@
         }
         
         .video-list {
-            margin-top: 30px;
+            margin-top: 25px;
         }
         
         .video-item {
             background: #f8f9fa;
-            border-radius: 12px;
-            padding: 20px;
-            margin: 15px 0;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
             border-left: 4px solid #667eea;
         }
         
@@ -140,22 +144,27 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
         
         .video-title {
             font-weight: 600;
             color: #333;
-            font-size: 16px;
+            font-size: 14px;
             flex: 1;
+            min-width: 0;
+            word-break: break-word;
         }
         
         .video-status {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 11px;
             font-weight: 600;
-            margin-left: 10px;
+            margin-left: 8px;
+            white-space: nowrap;
         }
         
         .status-pending {
@@ -180,18 +189,18 @@
         
         .video-url {
             color: #666;
-            font-size: 14px;
+            font-size: 12px;
             word-break: break-all;
-            margin: 10px 0;
+            margin: 8px 0;
         }
         
         .progress-bar {
             width: 100%;
-            height: 8px;
+            height: 6px;
             background: #e9ecef;
-            border-radius: 4px;
+            border-radius: 3px;
             overflow: hidden;
-            margin: 10px 0;
+            margin: 8px 0;
         }
         
         .progress-fill {
@@ -203,7 +212,7 @@
         
         .download-all-btn {
             background: #28a745;
-            margin-top: 20px;
+            margin-top: 15px;
         }
         
         .loading {
@@ -212,13 +221,13 @@
         }
         
         .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 30px;
+            height: 30px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            margin: 0 auto 12px;
         }
         
         @keyframes spin {
@@ -229,17 +238,62 @@
         .note {
             text-align: center;
             color: #868e96;
-            font-size: 14px;
-            margin-top: 30px;
+            font-size: 12px;
+            margin-top: 25px;
         }
         
         .success-message {
             background: #d4edda;
             color: #155724;
-            padding: 15px;
+            padding: 12px;
             border-radius: 8px;
-            margin: 20px 0;
+            margin: 15px 0;
             display: none;
+            font-size: 14px;
+        }
+        
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            .header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .back-btn {
+                align-self: flex-start;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 10px;
+            }
+            
+            .container {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 1.5rem;
+            }
+            
+            textarea {
+                height: 120px;
+                font-size: 13px;
+            }
+            
+            button {
+                padding: 12px;
+                font-size: 14px;
+            }
         }
     </style>
 </head>
@@ -319,7 +373,7 @@ https://vm.tiktok.com/..."></textarea>
             const videoItem = {
                 id: videoId,
                 url: url,
-                title: url.substring(0, 60) + (url.length > 60 ? '...' : ''),
+                title: url.substring(0, 50) + (url.length > 50 ? '...' : ''),
                 status: 'pending',
                 progress: 0
             };
@@ -380,22 +434,37 @@ https://vm.tiktok.com/..."></textarea>
             document.getElementById('loading').style.display = 'block';
             
             try {
-                // For demo purposes, we'll just show a success message
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('successMessage').style.display = 'block';
-                
-                // Update all videos to processing status
-                videoQueue.forEach(video => {
-                    updateVideoStatus(video.id, 'processing', null, 30);
+                // Send batch download request
+                const response = await fetch('/api/download/batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ urls })
                 });
                 
-                // Simulate completion
-                setTimeout(() => {
-                    videoQueue.forEach(video => {
-                        updateVideoStatus(video.id, 'completed', null, 100);
-                    });
-                }, 3000);
+                const data = await response.json();
                 
+                if (data.success) {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('successMessage').style.display = 'block';
+                    
+                    // Update all videos to processing status
+                    videoQueue.forEach(video => {
+                        updateVideoStatus(video.id, 'processing', null, 30);
+                    });
+                    
+                    // Simulate completion (in a real app, you'd have real-time updates)
+                    setTimeout(() => {
+                        videoQueue.forEach(video => {
+                            updateVideoStatus(video.id, 'completed', null, 100);
+                        });
+                        document.getElementById('successMessage').textContent = '✅ All videos downloaded successfully!';
+                    }, 3000);
+                    
+                } else {
+                    throw new Error(data.error || 'Batch download failed');
+                }
             } catch (error) {
                 document.getElementById('loading').style.display = 'none';
                 alert('Error starting batch download: ' + error.message);

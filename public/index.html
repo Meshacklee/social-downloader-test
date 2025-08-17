@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Social Media Downloader</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * {
             margin: 0;
@@ -16,47 +17,47 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
+            padding: 15px;
         }
         
         .container {
             background: white;
             border-radius: 20px;
-            padding: 40px;
+            padding: 30px;
             width: 100%;
             max-width: 600px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.2);
         }
         
         h1 {
             text-align: center;
             color: #333;
             margin-bottom: 10px;
-            font-size: 2.5rem;
+            font-size: 2rem;
         }
         
         .subtitle {
             text-align: center;
             color: #666;
-            margin-bottom: 30px;
-            font-size: 1.1rem;
+            margin-bottom: 25px;
+            font-size: 1rem;
         }
         
         .platforms {
             display: flex;
             justify-content: center;
             flex-wrap: wrap;
-            gap: 15px;
-            margin: 30px 0;
+            gap: 12px;
+            margin: 25px 0;
         }
         
         .platform {
             background: #f8f9fa;
-            border-radius: 12px;
-            padding: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
-            width: 90px;
-            height: 90px;
+            border-radius: 10px;
+            padding: 12px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+            width: 80px;
+            height: 80px;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -66,41 +67,41 @@
         }
         
         .platform:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
             background: #e9ecef;
         }
         
         .platform-icon {
-            font-size: 28px;
-            margin-bottom: 8px;
+            font-size: 24px;
+            margin-bottom: 6px;
         }
         
         .platform-name {
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             text-align: center;
             color: #495057;
         }
         
         .input-group {
-            margin-bottom: 25px;
+            margin-bottom: 20px;
         }
         
         label {
             display: block;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             font-weight: 600;
             color: #495057;
-            font-size: 18px;
+            font-size: 16px;
         }
         
         input, select {
             width: 100%;
-            padding: 15px;
+            padding: 12px;
             border: 2px solid #e9ecef;
-            border-radius: 12px;
-            font-size: 16px;
+            border-radius: 10px;
+            font-size: 14px;
             transition: border-color 0.3s;
             margin-bottom: 10px;
         }
@@ -115,9 +116,9 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 16px;
-            border-radius: 12px;
-            font-size: 18px;
+            padding: 14px;
+            border-radius: 10px;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
@@ -126,7 +127,7 @@
         
         button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
         }
         
         button:active {
@@ -135,35 +136,40 @@
         
         .cookie-section {
             background: #e9f7fe;
-            border-radius: 12px;
-            padding: 20px;
-            margin: 20px 0;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .cookie-section small {
+            font-size: 12px;
+            color: #6c757d;
         }
         
         .result {
-            margin-top: 30px;
-            padding: 25px;
+            margin-top: 25px;
+            padding: 20px;
             background: #f8f9fa;
-            border-radius: 12px;
+            border-radius: 10px;
             display: none;
         }
         
         .result h3 {
             color: #28a745;
-            margin-bottom: 15px;
-            font-size: 24px;
+            margin-bottom: 12px;
+            font-size: 20px;
         }
         
         .result p {
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             color: #495057;
-            font-size: 16px;
+            font-size: 14px;
         }
         
         .download-btn {
             background: #28a745;
-            padding: 14px 25px;
-            font-size: 16px;
+            padding: 12px 20px;
+            font-size: 14px;
         }
         
         .loading {
@@ -172,13 +178,13 @@
         }
         
         .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 30px;
+            height: 30px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            margin: 0 auto 12px;
         }
         
         @keyframes spin {
@@ -189,23 +195,92 @@
         .note {
             text-align: center;
             color: #868e96;
-            font-size: 14px;
-            margin-top: 20px;
+            font-size: 12px;
+            margin-top: 15px;
         }
         
         .batch-link {
             text-align: center;
-            margin-top: 20px;
+            margin-top: 15px;
         }
         
         .batch-link a {
             color: #667eea;
             text-decoration: none;
             font-weight: 600;
+            font-size: 14px;
         }
         
         .batch-link a:hover {
             text-decoration: underline;
+        }
+        
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            .platforms {
+                gap: 10px;
+            }
+            
+            .platform {
+                width: 70px;
+                height: 70px;
+            }
+            
+            .platform-icon {
+                font-size: 20px;
+            }
+            
+            .platform-name {
+                font-size: 10px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 10px;
+            }
+            
+            .container {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 1.5rem;
+            }
+            
+            .subtitle {
+                font-size: 0.9rem;
+            }
+            
+            .platforms {
+                gap: 8px;
+            }
+            
+            .platform {
+                width: 60px;
+                height: 60px;
+            }
+            
+            .platform-icon {
+                font-size: 18px;
+            }
+            
+            .platform-name {
+                font-size: 9px;
+            }
+            
+            input, button {
+                padding: 10px;
+                font-size: 14px;
+            }
         }
     </style>
 </head>
