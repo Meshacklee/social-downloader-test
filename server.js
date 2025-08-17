@@ -411,6 +411,7 @@ app.post('/api/download', async (req, res) => {
 });
 
 // Batch download endpoint - FIXED VERSION
+// Replace your existing batch endpoint with this one
 app.post('/api/download/batch', async (req, res) => {
     const { urls } = req.body;
     
@@ -425,8 +426,7 @@ app.post('/api/download/batch', async (req, res) => {
         res.json({
             success: true,
             message: `Batch download started for ${urls.length} videos`,
-            total: urls.length,
-            urls: urls.slice(0, 3) // Show first 3 URLs as confirmation
+            total: urls.length
         });
         
         // Process videos sequentially in background
@@ -438,34 +438,16 @@ app.post('/api/download/batch', async (req, res) => {
                 console.log(`Processing video ${i + 1}/${urls.length}:`, url);
                 
                 try {
-                    // Determine platform and use appropriate download
-                    let result;
-                    
-                    if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                        result = await downloadVideo(url, null);
-                        console.log(`YouTube download result for video ${i + 1}:`, result.title);
-                    } else if (url.includes('instagram.com')) {
-                        result = await downloadVideo(url, null);
-                        console.log(`Instagram download result for video ${i + 1}:`, result.title);
-                    } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
-                        result = await downloadVideo(url, null);
-                        console.log(`TikTok download result for video ${i + 1}:`, result.title);
-                    } else if (url.includes('twitter.com') || url.includes('x.com')) {
-                        result = await downloadVideo(url, null);
-                        console.log(`Twitter download result for video ${i + 1}:`, result.title);
-                    } else {
-                        // Generic download for other platforms
-                        result = await downloadVideo(url, null);
-                        console.log(`Generic download result for video ${i + 1}:`, result.title);
-                    }
+                    // Download the video
+                    const result = await downloadVideo(url, null);
                     
                     if (result.success) {
-                        console.log(`Successfully processed video ${i + 1}/${urls.length}:`, result.title);
+                        console.log(`Successfully downloaded video ${i + 1}:`, result.title);
                     } else {
-                        console.log(`Failed to process video ${i + 1}/${urls.length}:`, result);
+                        console.log(`Failed to download video ${i + 1}:`, result);
                     }
                     
-                    // Add delay between downloads to avoid rate limiting
+                    // Add delay between downloads
                     if (i < urls.length - 1) {
                         console.log('Waiting 2 seconds before next download...');
                         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -473,7 +455,6 @@ app.post('/api/download/batch', async (req, res) => {
                     
                 } catch (error) {
                     console.error(`Error processing video ${i + 1}:`, url, error.message);
-                    // Continue with next video even if one fails
                 }
             }
             
@@ -481,9 +462,9 @@ app.post('/api/download/batch', async (req, res) => {
         });
     } catch (error) {
         console.error('Batch download error:', error);
-        // Note: Can't send response here since it's already sent
     }
 });
+
 
 // Serve main pages
 app.get('/', (req, res) => {
