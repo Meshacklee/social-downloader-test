@@ -324,120 +324,134 @@
         <p class="note">Supports YouTube, Instagram, TikTok, Twitter/X, and 1000+ other platforms</p>
     </div>
 
-    <script>
-        let uploadedCookieFile = null;
+        <script>
+    let uploadedCookieFile = null;
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load supported platforms
+        fetch('/api/platforms')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('platformsContainer');
+                container.innerHTML = data.platforms.map(platform => `
+                    <div class="platform" title="${platform.name}">
+                        <div class="platform-icon">${platform.icon}</div>
+                        <div class="platform-name">${platform.name}</div>
+                    </div>
+                `).join('');
+            })
+            .catch(error => {
+                console.log('Could not load platforms, using defaults');
+            });
         
-        document.addEventListener('DOMContentLoaded', function() {
-            // Load supported platforms
-            fetch('/api/platforms')
+        // Handle cookie file upload
+        document.getElementById('cookieFile').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const formData = new FormData();
+                formData.append('cookieFile', file);
+                
+                fetch('/api/upload-cookie', {
+                    method: 'POST',
+                    body: formData
+                })
                 .then(response => response.json())
                 .then(data => {
-                    const container = document.getElementById('platformsContainer');
-                    container.innerHTML = data.platforms.map(platform => `
-                        <div class="platform" title="${platform.name}">
-                            <div class="platform-icon">${platform.icon}</div>
-                            <div class="platform-name">${platform.name}</div>
-                        </div>
-                    `).join('');
+                    if (data.success) {
+                        uploadedCookieFile = data.filename;
+                        alert('Cookie file uploaded successfully! It will be used for YouTube downloads.');
+                    } else {
+                        alert('Error uploading cookie file: ' + data.error);
+                    }
                 })
                 .catch(error => {
-                    console.log('Could not load platforms, using defaults');
+                    alert('Error uploading cookie file: ' + error.message);
                 });
-            
-            // Handle cookie file upload
-            document.getElementById('cookieFile').addEventListener('change', function(event) {
-                const file = event.target.files[0];
-                if (file) {
-                    const formData = new FormData();
-                    formData.append('cookieFile', file);
-                    
-                    fetch('/api/upload-cookie', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            uploadedCookieFile = data.filename;
-                            alert('Cookie file uploaded successfully! It will be used for YouTube downloads.');
-                        } else {
-                            alert('Error uploading cookie file: ' + data.error);
-                        }
-                    })
-                    .catch(error => {
-                        alert('Error uploading cookie file: ' + error.message);
-                    });
-                }
-            });
-            
-            document.getElementById('downloadBtn').addEventListener('click', async function() {
-                const url = document.getElementById('videoUrl').value;
-                
-                if (!url) {
-                    alert('Please enter a video URL');
-                    return;
-                }
-                
-                // Determine which endpoint to use
-                let endpoint = '/api/download';
-                if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                    endpoint = '/api/download/youtube';
-                } else if (url.includes('instagram.com')) {
-                    endpoint = '/api/download/instagram';
-                } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
-                    endpoint = '/api/download/tiktok';
-                } else if (url.includes('twitter.com') || url.includes('x.com')) {
-                    endpoint = '/api/download/twitter';
-                }
-                
-                // Show loading
-                document.getElementById('loading').style.display = 'block';
-                document.getElementById('result').style.display = 'none';
-                
-                try {
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ 
-                            url,
-                            cookieFile: uploadedCookieFile
-                        })
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        // Hide loading, show result
-                        document.getElementById('loading').style.display = 'none';
-                        document.getElementById('result').style.display = 'block';
-                        
-                        // Update result content
-                        document.getElementById('title').textContent = data.title || 'Video Ready';
-                        
-                        // Set up REAL download button
-                        document.getElementById('finalDownloadBtn').onclick = function() {
-                            if (data.downloadUrl) {
-                                let downloadUrl = data.downloadUrl;
-                                if (!downloadUrl.startsWith('http')) {
-                                    downloadUrl = window.location.origin + downloadUrl;
-                                }
-                                console.log('Opening download URL:', downloadUrl);
-                                window.open(downloadUrl, '_blank');
-                            } else {
-                                alert('Download URL not available');
-                            }
-                        };
-                    } else {
-                        throw new Error(data.error || 'Download failed');
-                    }
-                } catch (error) {
-                    document.getElementById('loading').style.display = 'none';
-                    alert('Error: ' + error.message);
-                }
-            });
+            }
         });
-    </script>
+        
+        document.getElementById('downloadBtn').addEventListener('click', async function() {
+            const url = document.getElementById('videoUrl').value;
+            
+            if (!url) {
+                alert('Please enter a video URL');
+                return;
+            }
+            
+            // Determine which endpoint to use
+            let endpoint = '/api/download';
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                endpoint = '/api/download/youtube';
+            } else if (url.includes('instagram.com')) {
+                endpoint = '/api/download/instagram';
+            } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
+                endpoint = '/api/download/tiktok';
+            } else if (url.includes('twitter.com') || url.includes('x.com')) {
+                endpoint = '/api/download/twitter';
+            }
+            
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        url,
+                        cookieFile: uploadedCookieFile
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Hide loading, show result
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('result').style.display = 'block';
+                    
+                    // Update result content
+                    document.getElementById('title').textContent = data.title || 'Video Ready';
+                    
+                    // Set up REAL download button
+                    document.getElementById('finalDownloadBtn').onclick = function() {
+                        if (data.downloadUrl) {
+                            // Create full URL
+                            let downloadUrl = data.downloadUrl;
+                            if (!downloadUrl.startsWith('http')) {
+                                downloadUrl = window.location.origin + downloadUrl;
+                            }
+                            
+                            console.log('Downloading from:', downloadUrl);
+                            
+                            // Create a temporary link and click it
+                            const link = document.createElement('a');
+                            link.href = downloadUrl;
+                            link.download = data.filename || 'video';
+                            link.style.display = 'none';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            
+                            // Alternative: Open in new tab
+                            // window.open(downloadUrl, '_blank');
+                        } else {
+                            alert('Download URL not available');
+                        }
+                    };
+                } else {
+                    throw new Error(data.error || 'Download failed');
+                }
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                alert('Error: ' + error.message);
+            }
+        });
+    });
+</script>
+
 </body>
 </html>
