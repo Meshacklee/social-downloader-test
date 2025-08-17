@@ -1,0 +1,18 @@
+# Node.js
+node_modules/
+
+# Downloads folder
+downloads/
+
+# Temporary files
+*.log
+*.rtf
+
+# yt-dlp master folder
+yt-dlp-master/
+
+# Other ignored files
+.DS_Store
+Thumbs.db
+# Ignore line ending warnings for node_modules
+node_modules/
