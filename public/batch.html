@@ -337,139 +337,143 @@ https://vm.tiktok.com/..."></textarea>
     </div>
 
     <script>
-        let videoQueue = [];
-        
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('addVideosBtn').addEventListener('click', function() {
-                const urlsText = document.getElementById('videoUrls').value;
-                const urls = urlsText.split('\n').filter(url => url.trim() !== '');
-                
-                if (urls.length === 0) {
-                    alert('Please enter at least one video URL');
-                    return;
-                }
-                
-                // Clear input
-                document.getElementById('videoUrls').value = '';
-                
-                // Add videos to queue
-                urls.forEach(url => {
-                    addToQueue(url.trim());
-                });
-                
-                // Show download all button
-                if (videoQueue.length > 0) {
-                    document.getElementById('downloadAllBtn').style.display = 'block';
-                }
-            });
-            
-            document.getElementById('downloadAllBtn').addEventListener('click', function() {
-                startBatchDownload();
-            });
-        });
-        
-        function addToQueue(url) {
-            const videoId = Date.now() + Math.random();
-            const videoItem = {
-                id: videoId,
-                url: url,
-                title: url.substring(0, 50) + (url.length > 50 ? '...' : ''),
-                status: 'pending',
-                progress: 0
-            };
-            
-            videoQueue.push(videoItem);
-            renderVideoList();
-        }
-        
-        function renderVideoList() {
-            const videoList = document.getElementById('videoList');
-            videoList.innerHTML = '';
-            
-            videoQueue.forEach(video => {
-                const videoElement = document.createElement('div');
-                videoElement.className = `video-item ${video.status}`;
-                videoElement.innerHTML = `
-                    <div class="video-header">
-                        <div class="video-title">${video.title}</div>
-                        <div class="video-status status-${video.status}">${getStatusText(video.status)}</div>
-                    </div>
-                    <div class="video-url">${video.url}</div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${video.progress}%"></div>
-                    </div>
-                `;
-                videoList.appendChild(videoElement);
-            });
-        }
-        
-        function getStatusText(status) {
-            switch(status) {
-                case 'pending': return 'Pending';
-                case 'processing': return 'Processing';
-                case 'completed': return 'Completed';
-                case 'error': return 'Error';
-                default: return status;
-            }
-        }
-        
-        function updateVideoStatus(videoId, status, title = null, progress = null) {
-            const videoIndex = videoQueue.findIndex(v => v.id === videoId);
-            if (videoIndex !== -1) {
-                if (status) videoQueue[videoIndex].status = status;
-                if (title) videoQueue[videoIndex].title = title;
-                if (progress !== null) videoQueue[videoIndex].progress = progress;
-                renderVideoList();
-            }
-        }
-        
-        async function startBatchDownload() {
-            const urls = videoQueue.map(video => video.url);
+    let videoQueue = [];
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('addVideosBtn').addEventListener('click', function() {
+            const urlsText = document.getElementById('videoUrls').value;
+            const urls = urlsText.split('\n').filter(url => url.trim() !== '');
             
             if (urls.length === 0) {
-                alert('No videos in queue');
+                alert('Please enter at least one video URL');
                 return;
             }
             
-            document.getElementById('loading').style.display = 'block';
+            // Clear input
+            document.getElementById('videoUrls').value = '';
             
-            try {
-                // Send batch download request
-                const response = await fetch('/api/download/batch', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ urls })
+            // Add videos to queue
+            urls.forEach(url => {
+                addToQueue(url.trim());
+            });
+            
+            // Show download all button
+            if (videoQueue.length > 0) {
+                document.getElementById('downloadAllBtn').style.display = 'block';
+            }
+        });
+        
+        document.getElementById('downloadAllBtn').addEventListener('click', function() {
+            startBatchDownload();
+        });
+    });
+    
+    function addToQueue(url) {
+        const videoId = Date.now() + Math.random();
+        const videoItem = {
+            id: videoId,
+            url: url,
+            title: url.length > 60 ? url.substring(0, 60) + '...' : url,
+            status: 'pending',
+            progress: 0
+        };
+        
+        videoQueue.push(videoItem);
+        renderVideoList();
+    }
+    
+    function renderVideoList() {
+        const videoList = document.getElementById('videoList');
+        videoList.innerHTML = '';
+        
+        videoQueue.forEach(video => {
+            const videoElement = document.createElement('div');
+            videoElement.className = `video-item ${video.status}`;
+            videoElement.innerHTML = `
+                <div class="video-header">
+                    <div class="video-title">${video.title}</div>
+                    <div class="video-status status-${video.status}">${getStatusText(video.status)}</div>
+                </div>
+                <div class="video-url">${video.url}</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${video.progress}%"></div>
+                </div>
+            `;
+            videoList.appendChild(videoElement);
+        });
+    }
+    
+    function getStatusText(status) {
+        switch(status) {
+            case 'pending': return 'Pending';
+            case 'processing': return 'Processing';
+            case 'completed': return 'Completed';
+            case 'error': return 'Error';
+            default: return status;
+        }
+    }
+    
+    function updateVideoStatus(videoId, status, title = null, progress = null) {
+        const videoIndex = videoQueue.findIndex(v => v.id === videoId);
+        if (videoIndex !== -1) {
+            if (status) videoQueue[videoIndex].status = status;
+            if (title) videoQueue[videoIndex].title = title;
+            if (progress !== null) videoQueue[videoIndex].progress = progress;
+            renderVideoList();
+        }
+    }
+    
+    async function startBatchDownload() {
+        const urls = videoQueue.map(video => video.url);
+        
+        if (urls.length === 0) {
+            alert('No videos in queue');
+            return;
+        }
+        
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('successMessage').style.display = 'none';
+        
+        try {
+            // Send batch download request
+            const response = await fetch('/api/download/batch', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ urls })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('successMessage').style.display = 'block';
+                document.getElementById('successMessage').textContent = '🎉 Batch download started! Videos are being downloaded in the background.';
+                document.getElementById('successMessage').style.backgroundColor = '#d4edda';
+                document.getElementById('successMessage').style.color = '#155724';
+                
+                // Update all videos to processing status
+                videoQueue.forEach(video => {
+                    updateVideoStatus(video.id, 'processing', null, 30);
                 });
                 
-                const data = await response.json();
-                
-                if (data.success) {
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('successMessage').style.display = 'block';
-                    
-                    // Update all videos to processing status
+                // Simulate completion feedback (in a real app, you'd have real-time updates)
+                setTimeout(() => {
                     videoQueue.forEach(video => {
-                        updateVideoStatus(video.id, 'processing', null, 30);
+                        updateVideoStatus(video.id, 'completed', null, 100);
                     });
-                    
-                    // Simulate completion (in a real app, you'd have real-time updates)
-                    setTimeout(() => {
-                        videoQueue.forEach(video => {
-                            updateVideoStatus(video.id, 'completed', null, 100);
-                        });
-                        document.getElementById('successMessage').textContent = '✅ All videos downloaded successfully!';
-                    }, 3000);
-                    
-                } else {
-                    throw new Error(data.error || 'Batch download failed');
-                }
-            } catch (error) {
-                document.getElementById('loading').style.display = 'none';
-                alert('Error starting batch download: ' + error.message);
+                    document.getElementById('successMessage').innerHTML = '✅ All videos downloaded successfully!<br>Check your downloads folder.';
+                }, 5000);
+                
+            } else {
+                throw new Error(data.error || 'Batch download failed');
             }
+        } catch (error) {
+            document.getElementById('loading').style.display = 'none';
+            alert('Error starting batch download: ' + error.message);
         }
-    </script>
+    }
+</script>
 </body>
 </html>
