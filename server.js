@@ -7,7 +7,7 @@ const multer = require('multer');
 console.log('=== SERVER STARTING ===');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000; // Use Render's default port
 
 // Configure multer for cookie file uploads
 const upload = multer({ 
@@ -21,22 +21,25 @@ const upload = multer({
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Serve downloaded videos
-app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
+// CRITICAL: Serve downloaded videos with proper path resolution
+const downloadsDir = path.join(__dirname, 'downloads');
+app.use('/downloads', express.static(downloadsDir));
+
+// Ensure downloads directory exists
+if (!fs.existsSync(downloadsDir)) {
+    fs.mkdirSync(downloadsDir, { recursive: true });
+    console.log('Created downloads directory:', downloadsDir);
+}
 
 // Serve cookie files (only for internal use)
 app.use('/cookies', express.static(path.join(__dirname, 'cookies')));
 
-// Ensure directories exist
-const downloadsDir = path.join(__dirname, 'downloads');
+// Ensure cookies directory exists
 const cookiesDir = path.join(__dirname, 'cookies');
-
-[downloadsDir, cookiesDir].forEach(dir => {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-        console.log(`Created directory: ${dir}`);
-    }
-});
+if (!fs.existsSync(cookiesDir)) {
+    fs.mkdirSync(cookiesDir, { recursive: true });
+    console.log('Created cookies directory');
+}
 
 // Check if real downloads are enabled
 const realDownloadsEnabled = fs.existsSync(path.join(__dirname, 'ENABLE_REAL_DOWNLOADS'));
@@ -67,7 +70,6 @@ function ensureYtDlp() {
         }
         
         console.log('Downloading yt-dlp...');
-        // Fixed: Removed extra spaces in the curl command
         const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
         
         exec(downloadCommand, (error, stdout, stderr) => {
@@ -117,7 +119,8 @@ app.get('/health', (req, res) => {
         timestamp: new Date().toISOString(),
         realDownloads: realDownloadsEnabled,
         ytDlpInstalled: ytDlpExists,
-        ytDlpExecutable: ytDlpExists ? (ytDlpExecutable & 0o111) !== 0 : false
+        ytDlpExecutable: ytDlpExists ? (ytDlpExecutable & 0o111) !== 0 : false,
+        downloadsDir: downloadsDir
     });
 });
 
@@ -265,11 +268,13 @@ function downloadVideo(url, cookieFilename = null) {
                 try {
                     const files = fs.readdirSync(downloadsDir);
                     if (files.length > 0) {
+                        // Get the most recent file
                         const recentFiles = files
                             .map(file => ({ file, mtime: fs.statSync(path.join(downloadsDir, file)).mtime }))
                             .sort((a, b) => b.mtime - a.mtime);
                         
                         const recentFile = recentFiles[0].file;
+                        // CRITICAL: Use proper URL encoding
                         const downloadUrl = `/downloads/${encodeURIComponent(recentFile)}`;
                         
                         resolve({
@@ -410,8 +415,7 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
-// Batch download endpoint - FIXED VERSION
-// Replace your existing batch endpoint with this one
+// Batch download endpoint
 app.post('/api/download/batch', async (req, res) => {
     const { urls } = req.body;
     
@@ -429,23 +433,30 @@ app.post('/api/download/batch', async (req, res) => {
             total: urls.length
         });
         
-        // Process videos sequentially in background
+        // Process videos in background
         process.nextTick(async () => {
-            console.log('Starting sequential batch download for', urls.length, 'videos');
+            console.log('Starting batch download for', urls.length, 'videos');
             
             for (let i = 0; i < urls.length; i++) {
                 const url = urls[i];
                 console.log(`Processing video ${i + 1}/${urls.length}:`, url);
                 
                 try {
+                    // Determine endpoint based on URL
+                    let endpoint = '/api/download';
+                    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                        endpoint = '/api/download/youtube';
+                    } else if (url.includes('instagram.com')) {
+                        endpoint = '/api/download/instagram';
+                    } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
+                        endpoint = '/api/download/tiktok';
+                    } else if (url.includes('twitter.com') || url.includes('x.com')) {
+                        endpoint = '/api/download/twitter';
+                    }
+                    
                     // Download the video
                     const result = await downloadVideo(url, null);
-                    
-                    if (result.success) {
-                        console.log(`Successfully downloaded video ${i + 1}:`, result.title);
-                    } else {
-                        console.log(`Failed to download video ${i + 1}:`, result);
-                    }
+                    console.log(`Successfully downloaded video ${i + 1}:`, result.title);
                     
                     // Add delay between downloads
                     if (i < urls.length - 1) {
@@ -458,13 +469,13 @@ app.post('/api/download/batch', async (req, res) => {
                 }
             }
             
-            console.log('Batch download processing completed for all videos');
+            console.log('Batch download processing completed');
         });
     } catch (error) {
         console.error('Batch download error:', error);
+        // Note: Can't send response here since it's already sent
     }
 });
-
 
 // Serve main pages
 app.get('/', (req, res) => {
@@ -475,6 +486,20 @@ app.get('/', (req, res) => {
 app.get('/batch.html', (req, res) => {
     console.log('GET /batch.html');
     res.sendFile(path.join(__dirname, 'public', 'batch.html'));
+});
+
+// Add endpoint to list downloaded files
+app.get('/api/downloads', (req, res) => {
+    try {
+        const files = fs.readdirSync(downloadsDir);
+        res.json({
+            success: true,
+            files: files,
+            downloadsDir: downloadsDir
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Could not read downloads directory' });
+    }
 });
 
 // Catch all 404s
@@ -492,30 +517,11 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
+// CRITICAL: Bind to 0.0.0.0 as required by Render
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);
+    console.log('Downloads directory:', downloadsDir);
     console.log('Real downloads enabled:', realDownloadsEnabled);
 });
 
 console.log('=== SERVER SETUP COMPLETE ===');
-
-
-// Add this endpoint to list downloaded files
-app.get('/api/downloads', (req, res) => {
-    try {
-        const files = fs.readdirSync(downloadsDir);
-        const downloadFiles = files.map(file => ({
-            name: file,
-            url: `/downloads/${file}`,
-            size: fs.statSync(path.join(downloadsDir, file)).size,
-            modified: fs.statSync(path.join(downloadsDir, file)).mtime
-        })).sort((a, b) => b.modified - a.modified);
-        
-        res.json({
-            success: true,
-            files: downloadFiles
-        });
-    } catch (error) {
-        res.status(500).json({ error: 'Could not read downloads directory' });
-    }
-});
