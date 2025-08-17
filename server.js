@@ -55,12 +55,19 @@ function ensureYtDlp() {
         
         if (fs.existsSync(ytDlpPath)) {
             console.log('yt-dlp already exists');
+            // Ensure it's executable
+            try {
+                fs.chmodSync(ytDlpPath, 0o755);
+                console.log('yt-dlp permissions set to executable');
+            } catch (chmodError) {
+                console.error('Failed to set yt-dlp permissions:', chmodError);
+            }
             resolve();
             return;
         }
         
         console.log('Downloading yt-dlp...');
-        // FIXED: Removed extra spaces in the curl command
+        // Fixed: Removed extra spaces in the curl command
         const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
         
         exec(downloadCommand, (error, stdout, stderr) => {
@@ -68,6 +75,7 @@ function ensureYtDlp() {
                 console.error('Failed to download yt-dlp:', error);
                 console.log('Real downloads will fall back to simulation');
             } else {
+                // Make it executable
                 fs.chmod(ytDlpPath, 0o755, (chmodError) => {
                     if (chmodError) {
                         console.error('Failed to make yt-dlp executable:', chmodError);
@@ -102,14 +110,14 @@ app.get('/health', (req, res) => {
     console.log('GET /health');
     const ytDlpPath = path.join(__dirname, 'yt-dlp');
     const ytDlpExists = fs.existsSync(ytDlpPath);
-    const cookieFiles = fs.existsSync(cookiesDir) ? fs.readdirSync(cookiesDir) : [];
+    const ytDlpExecutable = ytDlpExists ? fs.statSync(ytDlpPath).mode : 0;
     
     res.json({ 
         status: 'OK', 
         timestamp: new Date().toISOString(),
         realDownloads: realDownloadsEnabled,
         ytDlpInstalled: ytDlpExists,
-        cookieFiles: cookieFiles.length
+        ytDlpExecutable: ytDlpExists ? (ytDlpExecutable & 0o111) !== 0 : false
     });
 });
 
@@ -166,6 +174,7 @@ function downloadVideo(url, cookieFilename = null) {
         
         const ytDlpPath = path.join(__dirname, 'yt-dlp');
         
+        // Check if yt-dlp exists and is executable
         if (!fs.existsSync(ytDlpPath)) {
             console.log('yt-dlp not found, simulating download');
             setTimeout(() => {
@@ -185,6 +194,22 @@ function downloadVideo(url, cookieFilename = null) {
                 });
             }, 1000);
             return;
+        }
+        
+        // Ensure yt-dlp is executable
+        try {
+            fs.accessSync(ytDlpPath, fs.constants.X_OK);
+            console.log('yt-dlp is executable');
+        } catch (accessError) {
+            console.log('yt-dlp not executable, attempting to fix permissions');
+            try {
+                fs.chmodSync(ytDlpPath, 0o755);
+                console.log('yt-dlp permissions fixed');
+            } catch (chmodError) {
+                console.error('Failed to fix yt-dlp permissions:', chmodError);
+                reject(new Error('yt-dlp is not executable and cannot be made executable'));
+                return;
+            }
         }
         
         console.log('Starting real download for:', url);
