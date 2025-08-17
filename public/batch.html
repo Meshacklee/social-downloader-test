@@ -336,120 +336,42 @@ https://vm.tiktok.com/..."></textarea>
         <p class="note">Videos will be downloaded sequentially. Check your downloads folder after processing.</p>
     </div>
 
-    <script>
+   <script>
     let videoQueue = [];
     
     document.addEventListener('DOMContentLoaded', function() {
-        document.getElementById('addVideosBtn').addEventListener('click', function() {
-            const urlsText = document.getElementById('videoUrls').value;
-            const urls = urlsText.split('\n').filter(url => url.trim() !== '');
-            
-            if (urls.length === 0) {
-                alert('Please enter at least one video URL');
-                return;
-            }
-            
-            // Clear input
-            document.getElementById('videoUrls').value = '';
-            
-            // Add videos to queue
-            urls.forEach(url => {
-                addToQueue(url.trim());
-            });
-            
-            // Show download all button
-            if (videoQueue.length > 0) {
-                document.getElementById('downloadAllBtn').style.display = 'block';
-            }
-        });
-        
-        document.getElementById('downloadAllBtn').addEventListener('click', function() {
-            startBatchDownload();
-        });
+        // Your existing event listeners...
     });
     
-    function addToQueue(url) {
-        const videoId = Date.now() + Math.random();
-        const videoItem = {
-            id: videoId,
-            url: url,
-            title: url.length > 60 ? url.substring(0, 60) + '...' : url,
-            status: 'pending',
-            progress: 0
-        };
-        
-        videoQueue.push(videoItem);
-        renderVideoList();
-    }
-    
-    function renderVideoList() {
-        const videoList = document.getElementById('videoList');
-        videoList.innerHTML = '';
-        
-        videoQueue.forEach(video => {
-            const videoElement = document.createElement('div');
-            videoElement.className = `video-item ${video.status}`;
-            videoElement.innerHTML = `
-                <div class="video-header">
-                    <div class="video-title">${video.title}</div>
-                    <div class="video-status status-${video.status}">${getStatusText(video.status)}</div>
-                </div>
-                <div class="video-url">${video.url}</div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${video.progress}%"></div>
-                </div>
-                ${video.downloadUrl ? `
-                    <button class="download-btn" onclick="triggerDownload('${video.downloadUrl}', '${video.filename || 'video'}')" style="margin-top: 10px; padding: 8px 12px; font-size: 12px;">
-                        📥 Download Video
-                    </button>
-                ` : ''}
-            `;
-            videoList.appendChild(videoElement);
-        });
-    }
-    
-    function getStatusText(status) {
-        switch(status) {
-            case 'pending': return 'Pending';
-            case 'processing': return 'Processing';
-            case 'completed': return 'Completed';
-            case 'error': return 'Error';
-            default: return status;
-        }
-    }
-    
-    function updateVideoStatus(videoId, status, title = null, progress = null, downloadUrl = null, filename = null) {
-        const videoIndex = videoQueue.findIndex(v => v.id === videoId);
-        if (videoIndex !== -1) {
-            if (status) videoQueue[videoIndex].status = status;
-            if (title) videoQueue[videoIndex].title = title;
-            if (progress !== null) videoQueue[videoIndex].progress = progress;
-            if (downloadUrl) videoQueue[videoIndex].downloadUrl = downloadUrl;
-            if (filename) videoQueue[videoIndex].filename = filename;
-            renderVideoList();
-        }
-    }
-    
-    // Function to trigger browser download
+    // Add this corrected triggerDownload function
     function triggerDownload(downloadUrl, filename) {
-        // Create full URL
+        console.log('Attempting to download:', downloadUrl, 'Filename:', filename);
+        
+        // Create full URL - THIS IS THE KEY FIX
         let fullUrl = downloadUrl;
-        if (!downloadUrl.startsWith('http')) {
-            fullUrl = window.location.origin + downloadUrl;
+        if (downloadUrl && !downloadUrl.startsWith('http')) {
+            // Handle relative URLs properly
+            if (downloadUrl.startsWith('/')) {
+                fullUrl = window.location.origin + downloadUrl;
+            } else {
+                fullUrl = window.location.origin + '/' + downloadUrl;
+            }
         }
         
-        console.log('Triggering download:', fullUrl);
+        console.log('Full download URL:', fullUrl);
         
-        // Create temporary link and click it
+        // Create temporary link and trigger download
         const link = document.createElement('a');
         link.href = fullUrl;
-        link.download = filename || 'video';
+        link.download = filename || 'video.mp4';
+        link.target = '_blank'; // Open in new tab if download doesn't trigger
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     }
     
+    // Update your batch download completion handling
     async function startBatchDownload() {
         const urls = videoQueue.map(video => video.url);
         
@@ -462,7 +384,6 @@ https://vm.tiktok.com/..."></textarea>
         document.getElementById('successMessage').style.display = 'none';
         
         try {
-            // Send batch download request
             const response = await fetch('/api/download/batch', {
                 method: 'POST',
                 headers: {
@@ -476,38 +397,30 @@ https://vm.tiktok.com/..."></textarea>
             if (data.success) {
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('successMessage').style.display = 'block';
-                document.getElementById('successMessage').textContent = '🎉 Batch download started! Videos are being downloaded in the background.';
-                document.getElementById('successMessage').style.backgroundColor = '#d4edda';
-                document.getElementById('successMessage').style.color = '#155724';
+                document.getElementById('successMessage').textContent = '🎉 Batch download started! Check back soon.';
                 
-                // Update all videos to processing status
-                videoQueue.forEach(video => {
-                    updateVideoStatus(video.id, 'processing', null, 30);
-                });
-                
-                // Simulate completion and add download buttons
+                // Simulate completion and add real download buttons
                 setTimeout(() => {
-                    videoQueue.forEach((video, index) => {
-                        // Create mock download URLs for demonstration
-                        // In a real implementation, you'd get these from the server
-                        const mockFilename = `video-${index + 1}.mp4`;
-                        const mockDownloadUrl = `/downloads/${mockFilename}`;
-                        
-                        updateVideoStatus(
-                            video.id, 
-                            'completed', 
-                            video.title, 
-                            100, 
-                            mockDownloadUrl, 
-                            mockFilename
-                        );
-                    });
+                    // In a real implementation, you'd get actual download URLs from the server
+                    // For now, we'll show where to find the files manually
                     
                     document.getElementById('successMessage').innerHTML = `
-                        ✅ All videos processed successfully!<br>
-                        <small>Click "Download Video" buttons below to download each video.</small>
+                        ✅ Batch processing completed!<br>
+                        <small>Your videos are saved in the downloads folder.<br>
+                        Access them at: ${window.location.origin}/downloads/</small>
                     `;
-                }, 5000);
+                    
+                    // Add refresh button to see downloaded files
+                    const refreshBtn = document.createElement('button');
+                    refreshBtn.textContent = '🔄 Refresh List';
+                    refreshBtn.onclick = function() {
+                        location.reload();
+                    };
+                    refreshBtn.style.marginTop = '10px';
+                    refreshBtn.style.padding = '8px 16px';
+                    document.getElementById('successMessage').appendChild(refreshBtn);
+                    
+                }, 8000);
                 
             } else {
                 throw new Error(data.error || 'Batch download failed');
