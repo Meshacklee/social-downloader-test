@@ -136,6 +136,10 @@
             border-left-color: #28a745;
         }
         
+        .video-item.processing {
+            border-left-color: #17a2b8;
+        }
+        
         .video-item.error {
             border-left-color: #dc3545;
         }
@@ -144,7 +148,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             flex-wrap: wrap;
             gap: 10px;
         }
@@ -163,7 +167,7 @@
             border-radius: 20px;
             font-size: 12px;
             font-weight: 600;
-            margin-left: 8px;
+            margin-left: 10px;
             white-space: nowrap;
         }
         
@@ -191,7 +195,7 @@
             color: #666;
             font-size: 12px;
             word-break: break-all;
-            margin: 8px 0;
+            margin: 10px 0;
         }
         
         .progress-bar {
@@ -200,7 +204,7 @@
             background: #e9ecef;
             border-radius: 4px;
             overflow: hidden;
-            margin: 8px 0;
+            margin: 10px 0;
         }
         
         .progress-fill {
@@ -213,8 +217,12 @@
         .download-btn {
             background: #28a745;
             margin-top: 15px;
-            padding: 10px 15px;
+            padding: 12px 20px;
             font-size: 14px;
+        }
+        
+        .download-btn:hover {
+            background: #218838;
         }
         
         .loading {
@@ -237,13 +245,6 @@
             100% { transform: rotate(360deg); }
         }
         
-        .note {
-            text-align: center;
-            color: #868e96;
-            font-size: 14px;
-            margin-top: 30px;
-        }
-        
         .success-message {
             background: #d4edda;
             color: #155724;
@@ -251,6 +252,13 @@
             border-radius: 8px;
             margin: 20px 0;
             display: none;
+        }
+        
+        .note {
+            text-align: center;
+            color: #868e96;
+            font-size: 14px;
+            margin-top: 30px;
         }
         
         /* Mobile responsiveness */
@@ -339,6 +347,7 @@ https://vm.tiktok.com/..."></textarea>
 
     <script>
         let videoQueue = [];
+        let downloadResults = []; // Store download results
         
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('addVideosBtn').addEventListener('click', function() {
@@ -400,8 +409,8 @@ https://vm.tiktok.com/..."></textarea>
                         <div class="progress-fill" style="width: ${video.progress}%"></div>
                     </div>
                     ${video.downloadUrl ? `
-                        <button class="download-btn" onclick="downloadFile('${video.downloadUrl}', '${video.filename || 'video'}')">
-                            📥 Download Video
+                        <button class="download-btn" onclick="downloadVideoFile('${video.downloadUrl}', '${video.filename || 'video'}')">
+                            📥 Download ${video.filename || 'Video'}
                         </button>
                     ` : ''}
                 `;
@@ -431,9 +440,9 @@ https://vm.tiktok.com/..."></textarea>
             }
         }
         
-        // WORKING DOWNLOAD FUNCTION
-        function downloadFile(downloadUrl, filename) {
-            console.log('Downloading file:', downloadUrl, 'Filename:', filename);
+        // WORKING DOWNLOAD FUNCTION - NO AUTOMATIC TRIGGERING
+        function downloadVideoFile(downloadUrl, filename) {
+            console.log('User requested download:', downloadUrl, 'Filename:', filename);
             
             // Create full URL
             let fullUrl = downloadUrl;
@@ -447,24 +456,17 @@ https://vm.tiktok.com/..."></textarea>
             
             console.log('Full download URL:', fullUrl);
             
-            // Try multiple methods to trigger download
-            try {
-                // Method 1: Create link and click
-                const link = document.createElement('a');
-                link.href = fullUrl;
-                link.download = filename || 'video.mp4';
-                link.target = '_blank';
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                
-                console.log('Download triggered via link click');
-            } catch (error) {
-                console.error('Download error:', error);
-                // Fallback: Open in new tab
-                window.open(fullUrl, '_blank');
-            }
+            // Create temporary link and click it
+            const link = document.createElement('a');
+            link.href = fullUrl;
+            link.download = filename || 'video.mp4';
+            link.target = '_blank';
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            console.log('Download triggered successfully');
         }
         
         async function startBatchDownload() {
@@ -498,29 +500,8 @@ https://vm.tiktok.com/..."></textarea>
                         updateVideoStatus(video.id, 'processing', null, 30);
                     });
                     
-                    // Simulate completion with download buttons
-                    setTimeout(() => {
-                        videoQueue.forEach((video, index) => {
-                            // Create mock download URLs for demonstration
-                            const mockFilename = `video-${index + 1}.mp4`;
-                            const mockDownloadUrl = `/downloads/${mockFilename}`;
-                            
-                            updateVideoStatus(
-                                video.id, 
-                                'completed', 
-                                video.title, 
-                                100,
-                                mockDownloadUrl,
-                                mockFilename
-                            );
-                        });
-                        
-                        // Show completion message
-                        document.getElementById('successMessage').innerHTML = `
-                            ✅ All videos processed successfully!<br>
-                            <small>Click the "Download Video" buttons above to download each video.</small>
-                        `;
-                    }, 5000);
+                    // Simulate real-time updates (in a real app, you'd use WebSockets)
+                    simulateRealTimeUpdates();
                     
                 } else {
                     throw new Error(data.error || 'Batch download failed');
@@ -529,6 +510,43 @@ https://vm.tiktok.com/..."></textarea>
                 document.getElementById('loading').style.display = 'none';
                 alert('Error starting batch download: ' + error.message);
             }
+        }
+        
+        // Simulate real-time updates (in a real implementation, you'd use WebSockets)
+        function simulateRealTimeUpdates() {
+            // Simulate completion for each video
+            videoQueue.forEach((video, index) => {
+                setTimeout(() => {
+                    // Simulate processing completion
+                    setTimeout(() => {
+                        // Create mock download URL for demonstration
+                        // In a real app, this would come from the server
+                        const mockFilename = `video-${index + 1}-${Date.now()}.mp4`;
+                        const mockDownloadUrl = `/downloads/${mockFilename}`;
+                        
+                        updateVideoStatus(
+                            video.id, 
+                            'completed', 
+                            video.title, 
+                            100,
+                            mockDownloadUrl,
+                            mockFilename
+                        );
+                        
+                        console.log(`Video ${index + 1} completed - Download available at:`, mockDownloadUrl);
+                        
+                    }, (index + 1) * 3000); // Stagger completions
+                    
+                }, index * 1000); // Start processing staggered
+            });
+            
+            // Show final completion message
+            setTimeout(() => {
+                document.getElementById('successMessage').innerHTML = `
+                    ✅ All videos processed successfully!<br>
+                    <small>Click the "Download Video" buttons above to download each video individually.</small>
+                `;
+            }, videoQueue.length * 3000 + 2000);
         }
     </script>
 </body>

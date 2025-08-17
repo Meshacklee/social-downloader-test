@@ -498,3 +498,24 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 console.log('=== SERVER SETUP COMPLETE ===');
+
+
+// Add this endpoint to list downloaded files
+app.get('/api/downloads', (req, res) => {
+    try {
+        const files = fs.readdirSync(downloadsDir);
+        const downloadFiles = files.map(file => ({
+            name: file,
+            url: `/downloads/${file}`,
+            size: fs.statSync(path.join(downloadsDir, file)).size,
+            modified: fs.statSync(path.join(downloadsDir, file)).mtime
+        })).sort((a, b) => b.modified - a.modified);
+        
+        res.json({
+            success: true,
+            files: downloadFiles
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Could not read downloads directory' });
+    }
+});
