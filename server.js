@@ -410,7 +410,7 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
-// Batch download endpoint
+// Batch download endpoint - FIXED VERSION
 app.post('/api/download/batch', async (req, res) => {
     const { urls } = req.body;
     
@@ -425,43 +425,52 @@ app.post('/api/download/batch', async (req, res) => {
         res.json({
             success: true,
             message: `Batch download started for ${urls.length} videos`,
-            total: urls.length
+            total: urls.length,
+            urls: urls.slice(0, 3) // Show first 3 URLs as confirmation
         });
         
-        // Process videos in background (this runs after response is sent)
+        // Process videos sequentially in background
         process.nextTick(async () => {
-            console.log('Starting batch download for', urls.length, 'videos');
+            console.log('Starting sequential batch download for', urls.length, 'videos');
             
             for (let i = 0; i < urls.length; i++) {
                 const url = urls[i];
                 console.log(`Processing video ${i + 1}/${urls.length}:`, url);
                 
                 try {
-                    // Determine endpoint based on URL
-                    let endpoint = '/api/download';
+                    // Determine platform and use appropriate download function
                     if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                        endpoint = '/api/download/youtube';
+                        const result = await downloadVideo(url, null);
+                        console.log(`YouTube download complete for video ${i + 1}:`, result.title);
                     } else if (url.includes('instagram.com')) {
-                        endpoint = '/api/download/instagram';
+                        const result = await downloadVideo(url, null);
+                        console.log(`Instagram download complete for video ${i + 1}:`, result.title);
                     } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
-                        endpoint = '/api/download/tiktok';
+                        const result = await downloadVideo(url, null);
+                        console.log(`TikTok download complete for video ${i + 1}:`, result.title);
                     } else if (url.includes('twitter.com') || url.includes('x.com')) {
-                        endpoint = '/api/download/twitter';
+                        const result = await downloadVideo(url, null);
+                        console.log(`Twitter download complete for video ${i + 1}:`, result.title);
+                    } else {
+                        const result = await downloadVideo(url, null);
+                        console.log(`Generic download complete for video ${i + 1}:`, result.title);
                     }
                     
-                    // For now, we'll just log that we're processing
-                    // In a real implementation, you'd actually download here
-                    console.log(`Would download from ${endpoint}:`, url);
+                    console.log(`Successfully processed video ${i + 1}/${urls.length}`);
                     
-                    // Simulate processing time
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    // Add small delay between downloads to avoid rate limiting
+                    if (i < urls.length - 1) {
+                        console.log('Waiting 2 seconds before next download...');
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
                     
                 } catch (error) {
                     console.error(`Error processing video ${i + 1}:`, url, error.message);
+                    // Continue with next video even if one fails
                 }
             }
             
-            console.log('Batch download processing completed');
+            console.log('Batch download processing completed for all videos');
         });
     } catch (error) {
         console.error('Batch download error:', error);
