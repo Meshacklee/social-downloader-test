@@ -438,27 +438,34 @@ app.post('/api/download/batch', async (req, res) => {
                 console.log(`Processing video ${i + 1}/${urls.length}:`, url);
                 
                 try {
-                    // Determine platform and use appropriate download function
+                    // Determine platform and use appropriate download
+                    let result;
+                    
                     if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                        const result = await downloadVideo(url, null);
-                        console.log(`YouTube download complete for video ${i + 1}:`, result.title);
+                        result = await downloadVideo(url, null);
+                        console.log(`YouTube download result for video ${i + 1}:`, result.title);
                     } else if (url.includes('instagram.com')) {
-                        const result = await downloadVideo(url, null);
-                        console.log(`Instagram download complete for video ${i + 1}:`, result.title);
+                        result = await downloadVideo(url, null);
+                        console.log(`Instagram download result for video ${i + 1}:`, result.title);
                     } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
-                        const result = await downloadVideo(url, null);
-                        console.log(`TikTok download complete for video ${i + 1}:`, result.title);
+                        result = await downloadVideo(url, null);
+                        console.log(`TikTok download result for video ${i + 1}:`, result.title);
                     } else if (url.includes('twitter.com') || url.includes('x.com')) {
-                        const result = await downloadVideo(url, null);
-                        console.log(`Twitter download complete for video ${i + 1}:`, result.title);
+                        result = await downloadVideo(url, null);
+                        console.log(`Twitter download result for video ${i + 1}:`, result.title);
                     } else {
-                        const result = await downloadVideo(url, null);
-                        console.log(`Generic download complete for video ${i + 1}:`, result.title);
+                        // Generic download for other platforms
+                        result = await downloadVideo(url, null);
+                        console.log(`Generic download result for video ${i + 1}:`, result.title);
                     }
                     
-                    console.log(`Successfully processed video ${i + 1}/${urls.length}`);
+                    if (result.success) {
+                        console.log(`Successfully processed video ${i + 1}/${urls.length}:`, result.title);
+                    } else {
+                        console.log(`Failed to process video ${i + 1}/${urls.length}:`, result);
+                    }
                     
-                    // Add small delay between downloads to avoid rate limiting
+                    // Add delay between downloads to avoid rate limiting
                     if (i < urls.length - 1) {
                         console.log('Waiting 2 seconds before next download...');
                         await new Promise(resolve => setTimeout(resolve, 2000));
