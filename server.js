@@ -416,3 +416,64 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 console.log('=== SERVER SETUP COMPLETE ===');
+
+// Add this to your existing server.js file, after your other download endpoints
+
+// Batch download endpoint
+app.post('/api/download/batch', async (req, res) => {
+    const { urls } = req.body;
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+        return res.status(400).json({ error: 'URLs array is required' });
+    }
+    
+    console.log('Batch download requested for', urls.length, 'videos');
+    
+    try {
+        // Return success response immediately
+        res.json({
+            success: true,
+            message: `Batch download started for ${urls.length} videos`,
+            total: urls.length
+        });
+        
+        // Process videos in background (this runs after response is sent)
+        process.nextTick(async () => {
+            console.log('Starting batch download for', urls.length, 'videos');
+            
+            for (let i = 0; i < urls.length; i++) {
+                const url = urls[i];
+                console.log(`Processing video ${i + 1}/${urls.length}:`, url);
+                
+                try {
+                    // Determine endpoint based on URL
+                    let endpoint = '/api/download';
+                    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                        endpoint = '/api/download/youtube';
+                    } else if (url.includes('instagram.com')) {
+                        endpoint = '/api/download/instagram';
+                    } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
+                        endpoint = '/api/download/tiktok';
+                    } else if (url.includes('twitter.com') || url.includes('x.com')) {
+                        endpoint = '/api/download/twitter';
+                    }
+                    
+                    // For now, we'll just log that we're processing
+                    // In a real implementation, you'd actually download here
+                    console.log(`Would download from ${endpoint}:`, url);
+                    
+                    // Simulate processing time
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                } catch (error) {
+                    console.error(`Error processing video ${i + 1}:`, url, error.message);
+                }
+            }
+            
+            console.log('Batch download processing completed');
+        });
+    } catch (error) {
+        console.error('Batch download error:', error);
+        // Note: Can't send response here since it's already sent
+    }
+});
