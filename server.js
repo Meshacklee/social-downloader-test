@@ -60,6 +60,7 @@ function ensureYtDlp() {
         }
         
         console.log('Downloading yt-dlp...');
+        // FIXED: Removed extra spaces in the curl command
         const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
         
         exec(downloadCommand, (error, stdout, stderr) => {
@@ -384,41 +385,6 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
-// Serve main pages
-app.get('/', (req, res) => {
-    console.log('GET / - Serving main page');
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.get('/batch.html', (req, res) => {
-    console.log('GET /batch.html');
-    res.sendFile(path.join(__dirname, 'public', 'batch.html'));
-});
-
-// Catch all 404s
-app.use('*', (req, res) => {
-    console.log('404 for:', req.path);
-    res.status(404).json({ 
-        error: 'Not found',
-        path: req.path
-    });
-});
-
-// Global error handler
-app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log('Real downloads enabled:', realDownloadsEnabled);
-});
-
-console.log('=== SERVER SETUP COMPLETE ===');
-
-// Add this to your existing server.js file, after your other download endpoints
-
 // Batch download endpoint
 app.post('/api/download/batch', async (req, res) => {
     const { urls } = req.body;
@@ -477,3 +443,36 @@ app.post('/api/download/batch', async (req, res) => {
         // Note: Can't send response here since it's already sent
     }
 });
+
+// Serve main pages
+app.get('/', (req, res) => {
+    console.log('GET / - Serving main page');
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/batch.html', (req, res) => {
+    console.log('GET /batch.html');
+    res.sendFile(path.join(__dirname, 'public', 'batch.html'));
+});
+
+// Catch all 404s
+app.use('*', (req, res) => {
+    console.log('404 for:', req.path);
+    res.status(404).json({ 
+        error: 'Not found',
+        path: req.path
+    });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log('Real downloads enabled:', realDownloadsEnabled);
+});
+
+console.log('=== SERVER SETUP COMPLETE ===');
