@@ -21,6 +21,8 @@ const upload = multer({
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+
+
 // CRITICAL: Serve downloaded videos with proper path resolution
 const downloadsDir = path.join(__dirname, 'downloads');
 app.use('/downloads', express.static(downloadsDir, {
@@ -52,9 +54,25 @@ if (!fs.existsSync(cookiesDir)) {
     console.log('Created cookies directory');
 }
 
+
+
+
+
+
+
 // Check if real downloads are enabled
 const realDownloadsEnabled = fs.existsSync(path.join(__dirname, 'ENABLE_REAL_DOWNLOADS'));
 console.log('Real downloads enabled:', realDownloadsEnabled);
+
+
+
+
+
+
+
+
+
+
 
 // Download yt-dlp if it doesn't exist and real downloads are enabled
 function ensureYtDlp() {
@@ -79,6 +97,55 @@ function ensureYtDlp() {
             resolve();
             return;
         }
+        // Inside downloadVideo function, in the yt-dlpProcess.on('close', (code) => { ... }) block
+// Where you handle code === 0:
+
+if (code === 0) {
+    console.log("✅ yt-dlp process exited successfully.");
+    
+    // --- ADD THIS LOGGING ---
+    console.log("🔍 Checking downloads directory for new files...");
+    console.log("   Downloads directory path:", downloadsDir);
+    
+    try {
+        const files = fs.readdirSync(downloadsDir);
+        console.log("   Files in directory:", files);
+        
+        if (files.length > 0) {
+            // Get the most recent file
+            const recentFiles = files
+                .map(file => ({ 
+                    file, 
+                    mtime: fs.statSync(path.join(downloadsDir, file)).mtime,
+                    fullPath: path.join(downloadsDir, file)
+                }))
+                .sort((a, b) => b.mtime - a.mtime);
+            
+            const recentFileObj = recentFiles[0];
+            console.log("   Most recent file found:");
+            console.log("     Name:", recentFileObj.file);
+            console.log("     Modified:", recentFileObj.mtime);
+            console.log("     Full Path:", recentFileObj.fullPath);
+            console.log("     File exists:", fs.existsSync(recentFileObj.fullPath));
+            
+            const downloadUrl = `/downloads/${encodeURIComponent(recentFileObj.file)}`;
+            
+            resolve({
+                success: true,
+                title: recentFileObj.file.replace(/\.[^/.]+$/, ""),
+                downloadUrl: downloadUrl,
+                filename: recentFileObj.file
+            });
+        } else {
+            console.error("❌ No files found in downloads directory after successful yt-dlp run!");
+            reject(new Error('No files found after download'));
+        }
+    } catch (fileError) {
+        console.error("❌ Error reading downloads directory:", fileError);
+        reject(new Error('Could not read downloads directory: ' + fileError.message));
+    }
+}
+
         
         console.log('Downloading yt-dlp...');
         const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';

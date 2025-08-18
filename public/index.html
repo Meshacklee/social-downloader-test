@@ -460,61 +460,93 @@
 
 
 // --- WORKING DOWNLOAD FUNCTION (PLACE THIS IN YOUR index.html <script> section) ---
-// Inside the part where you handle the download button click
-document.getElementById('finalDownloadBtn').onclick = function() {
-    if (data.downloadUrl) {
-        console.log("📥 Frontend: Download button clicked. Received downloadUrl:", data.downloadUrl);
+function triggerBrowserDownload(downloadUrl, filename) {
+    console.log("🔽 Frontend: triggerBrowserDownload called");
+    console.log("   Input downloadUrl:", downloadUrl);
+    console.log("   Input filename:", filename);
 
-        let fullDownloadUrl;
+    // --- ROBUST URL CONSTRUCTION ---
+    let finalUrlToUse = downloadUrl; // Default to the provided URL
 
-        // --- Robust URL Construction ---
-        if (data.downloadUrl.startsWith('http://') || data.downloadUrl.startsWith('https://')) {
-            // Already an absolute URL
-            fullDownloadUrl = data.downloadUrl;
-            console.log("   ✅ downloadUrl is already absolute.");
-        } else if (data.downloadUrl.startsWith('/')) {
-            // Root-relative path (e.g., /downloads/file.mp4)
-            fullDownloadUrl = `${window.location.origin}${data.downloadUrl}`;
-            console.log("   ℹ️ downloadUrl is root-relative. Constructed full URL:", fullDownloadUrl);
-        } else {
-            // Path-relative (unlikely from your API, but handle defensively)
-            console.warn("   ⚠️ downloadUrl is path-relative. This is unexpected.");
-            fullDownloadUrl = `${window.location.origin}/${data.downloadUrl}`;
-            console.log("   🧮 Fallback constructed full URL:", fullDownloadUrl);
-        }
-
-        console.log("   🎯 Final URL to trigger download:", fullDownloadUrl);
-
-        // --- Trigger Download ---
-        try {
-            const link = document.createElement('a');
-            link.href = fullDownloadUrl;
-            // Suggest filename to browser (important for simulated .txt files saved as .mp4)
-            link.download = data.filename || 'video.mp4';
-            link.target = '_blank'; // Open in new tab if download doesn't trigger
-            link.rel = 'noopener noreferrer'; // Security best practice
-            link.style.position = 'absolute';
-            link.style.left = '-9999px';
-            link.style.visibility = 'hidden';
-
-            document.body.appendChild(link);
-            console.log("   🖱️ Programmatically clicking download link...");
-            link.click();
-            console.log("   ✅ Click event dispatched.");
-            document.body.removeChild(link);
-            console.log("   🗑️ Temporary link removed.");
-
-        } catch (clickError) {
-            console.error("   ❌ Error during programmatic click:", clickError);
-            // Fallback: Open in new tab
-            console.log("   🔄 Fallback: Opening URL in new tab...");
-            window.open(fullDownloadUrl, '_blank', 'noopener,noreferrer');
-        }
-
+    // 1. Check if it's already an absolute URL
+    if (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://')) {
+        console.log("   ✅ downloadUrl is already absolute.");
+    } else if (downloadUrl.startsWith('/')) {
+        // 2. If it's a root-relative URL (e.g., /downloads/file.mp4)
+        console.log("   ℹ️ downloadUrl is root-relative. Constructing full URL...");
+        finalUrlToUse = window.location.origin + downloadUrl;
+        console.log("   🧮 Constructed full URL:", finalUrlToUse);
     } else {
-        alert('Download URL not available');
+        // 3. If it's path-relative (unlikely from your API, but handle anyway)
+        console.log("   ℹ️ downloadUrl is path-relative. Constructing full URL...");
+        // Use URL constructor for robust resolution
+        try {
+            const resolvedUrl = new URL(downloadUrl, window.location.href);
+            finalUrlToUse = resolvedUrl.href;
+            console.log("   🧮 Constructed full URL:", finalUrlToUse);
+        } catch (urlError) {
+            console.error("   ❌ Error constructing URL with URL() constructor:", urlError);
+            // Fallback: prepend current path (less reliable)
+            const currentPath = window.location.pathname;
+            const basePath = currentPath.endsWith('/') ? currentPath : currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+            finalUrlToUse = window.location.origin + basePath + downloadUrl;
+            console.log("   🧮 Fallback constructed full URL:", finalUrlToUse);
+        }
     }
-};
+
+    console.log("   🎯 Final URL to trigger download:", finalUrlToUse);
+
+    try {
+        // --- METHOD 1: Programmatic Link Click (Preferred) ---
+        console.log("   🖱️ Attempting programmatic download via <a> tag click...");
+        const link = document.createElement('a');
+        link.href = finalUrlToUse;
+        link.download = filename || 'video'; // Suggests filename to browser
+        link.target = '_blank'; // Opens in new tab if download doesn't trigger
+        link.rel = 'noopener noreferrer'; // Security best practice
+        // Make it invisible
+        link.style.position = 'absolute';
+        link.style.left = '-9999px';
+        link.style.visibility = 'hidden';
+
+        document.body.appendChild(link);
+        console.log("   📎 Appended link to body, now clicking...");
+        link.click();
+        console.log("   ✅ Click event dispatched.");
+        document.body.removeChild(link);
+        console.log("   🗑️ Link removed from body.");
+
+        // --- Optional: Fallback Timer (if download doesn't start) ---
+        // Detecting if a download started is hard. A simple fallback is
+        // to inform the user after a short delay.
+        /*
+        const fallbackTimeout = 5000; // 5 seconds
+        const fallbackTimer = setTimeout(() => {
+            console.warn("   ⏳ Fallback: Download might not have started. Suggesting manual action.");
+            alert(`If the download didn't start, you can try:\n1. Right-clicking the link and 'Save Link As...'\n2. Opening this URL directly: ${finalUrlToUse}`);
+            // window.open(finalUrlToUse, '_blank'); // Alternative: open in new tab
+        }, fallbackTimeout);
+        // If you had a way to detect success/failure, you'd clearTimeout(fallbackTimer) here.
+        */
+
+    } catch (clickError) {
+        console.error("   ❌ Critical error during programmatic download click:", clickError);
+        alert("An unexpected error occurred while trying to start the download. Please try again or check the browser console for details (Press F12).");
+    }
+}
+
+// --- ASSUMING YOU HAVE AN EVENT LISTENER LIKE THIS ---
+// Find the part where you attach the click handler to the "Download Now" button
+// It might look like this:
+/*
+document.getElementById('finalDownloadBtn').addEventListener('click', function() {
+    // ... code that gets data.downloadUrl and data.filename ...
+    triggerBrowserDownload(data.downloadUrl, data.filename);
+});
+*/
+// OR, if you set `onclick` directly in the HTML like `onclick="downloadVideoFile(...)"`
+// You need to make sure it calls `triggerBrowserDownload` with the correct arguments.
+
 
 
 
