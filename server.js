@@ -514,12 +514,30 @@ app.get('/api/downloads', (req, res) => {
 });
 
 // Catch all 404s
-app.use('*', (req, res) => {
-    console.log('404 for:', req.path);
-    res.status(404).json({ 
-        error: 'Not found',
-        path: req.path
-    });
+// Serve main pages
+app.get('/', (req, res) => {
+    console.log('GET / - Root path requested');
+    const indexPath = path.join(__dirname, 'public', 'index.html');
+    console.log('Attempting to serve index.html from:', indexPath);
+
+    // Check if file exists before trying to send
+    if (fs.existsSync(indexPath)) {
+        console.log('index.html found, sending file.');
+        res.sendFile(indexPath, (err) => {
+            if (err) {
+                console.error('Error sending index.html:', err);
+                // Don't use res.status again if headers might be sent
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Failed to load main page' });
+                }
+            } else {
+                console.log('index.html sent successfully.');
+            }
+        });
+    } else {
+        console.error('index.html NOT FOUND at:', indexPath);
+        res.status(404).json({ error: 'Main page (index.html) not found on server' });
+    }
 });
 
 // Global error handler
