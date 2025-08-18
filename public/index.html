@@ -1,560 +1,183 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Social Media Downloader</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 15px;
-        }
-        
-        .container {
-            background: white;
-            border-radius: 20px;
-            padding: 30px;
-            width: 100%;
-            max-width: 600px;
-            box-shadow: 0 15px 30px rgba(0,0,0,0.2);
-        }
-        
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 2rem;
-        }
-        
-        .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 25px;
-            font-size: 1rem;
-        }
-        
-        .platforms {
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
-            gap: 12px;
-            margin: 25px 0;
-        }
-        
-        .platform {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 12px;
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
-            width: 80px;
-            height: 80px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            transition: transform 0.3s, box-shadow 0.3s;
-            cursor: pointer;
-        }
-        
-        .platform:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
-            background: #e9ecef;
-        }
-        
-        .platform-icon {
-            font-size: 24px;
-            margin-bottom: 6px;
-        }
-        
-        .platform-name {
-            font-size: 11px;
-            font-weight: 600;
-            text-align: center;
-            color: #495057;
-        }
-        
-        .input-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #495057;
-            font-size: 16px;
-        }
-        
-        input, select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e9ecef;
-            border-radius: 10px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-            margin-bottom: 10px;
-        }
-        
-        input:focus, select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        button {
-            width: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 14px;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            margin-top: 10px;
-        }
-        
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
-        }
-        
-        button:active {
-            transform: translateY(0);
-        }
-        
-        .cookie-section {
-            background: #e9f7fe;
-            border-radius: 10px;
-            padding: 15px;
-            margin: 15px 0;
-        }
-        
-        .cookie-section small {
-            font-size: 12px;
-            color: #6c757d;
-        }
-        
-        .result {
-            margin-top: 25px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            display: none;
-        }
-        
-        .result h3 {
-            color: #28a745;
-            margin-bottom: 12px;
-            font-size: 20px;
-        }
-        
-        .result p {
-            margin-bottom: 15px;
-            color: #495057;
-            font-size: 14px;
-        }
-        
-        .download-btn {
-            background: #28a745;
-            padding: 12px 20px;
-            font-size: 14px;
-        }
-        
-        .loading {
-            text-align: center;
-            display: none;
-        }
-        
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 12px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .note {
-            text-align: center;
-            color: #868e96;
-            font-size: 12px;
-            margin-top: 15px;
-        }
-        
-        .batch-link {
-            text-align: center;
-            margin-top: 15px;
-        }
-        
-        .batch-link a {
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 14px;
-        }
-        
-        .batch-link a:hover {
-            text-decoration: underline;
-        }
-        
-        /* Mobile responsiveness */
-        @media (max-width: 768px) {
-            .container {
-                padding: 20px;
-            }
-            
-            h1 {
-                font-size: 1.8rem;
-            }
-            
-            .platforms {
-                gap: 10px;
-            }
-            
-            .platform {
-                width: 70px;
-                height: 70px;
-            }
-            
-            .platform-icon {
-                font-size: 20px;
-            }
-            
-            .platform-name {
-                font-size: 10px;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            body {
-                padding: 10px;
-            }
-            
-            .container {
-                padding: 15px;
-            }
-            
-            h1 {
-                font-size: 1.5rem;
-            }
-            
-            .subtitle {
-                font-size: 0.9rem;
-            }
-            
-            .platforms {
-                gap: 8px;
-            }
-            
-            .platform {
-                width: 60px;
-                height: 60px;
-            }
-            
-            .platform-icon {
-                font-size: 18px;
-            }
-            
-            .platform-name {
-                font-size: 9px;
-            }
-            
-            input, button {
-                padding: 10px;
-                font-size: 14px;
-            }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Social Media Video Downloader</title>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <div class="container">
-        <h1>📥 MediaGrab</h1>
-        <p class="subtitle">Download videos from any social media platform</p>
-        
-        <div class="platforms" id="platformsContainer">
-            <!-- Platforms will be loaded here -->
-        </div>
-        
-        <div class="cookie-section">
-            <label for="cookieFile">Upload YouTube Cookies (Optional):</label>
-            <input type="file" id="cookieFile" accept=".txt">
-            <small>Upload cookies.txt file to access restricted YouTube content</small>
-        </div>
-        
-        <div class="input-group">
-            <label for="videoUrl">Paste Video URL:</label>
-            <input type="url" id="videoUrl" placeholder="https://www.youtube.com/watch?v=... or https://www.instagram.com/p/...">
-        </div>
-        
-        <button id="downloadBtn">Download Video</button>
-        
-        <div class="batch-link">
-            <a href="/batch.html">📥 Batch Download Multiple Videos</a>
-        </div>
-        
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>Processing your video...</p>
-        </div>
-        
-        <div class="result" id="result">
-            <h3>✅ Ready to Download!</h3>
-            <p id="title"></p>
-            <button id="finalDownloadBtn" class="download-btn">📥 Download Now</button>
-        </div>
-        
-        <p class="note">Supports YouTube, Instagram, TikTok, Twitter/X, and 1000+ other platforms</p>
-    </div>
-
-        <script>
-    let uploadedCookieFile = null;
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+    <h1 class="text-2xl font-bold text-center text-gray-800 mb-4">Video Downloader</h1>
+    <p class="text-center text-gray-600 mb-6">Download single or multiple social media videos</p>
     
-    document.addEventListener('DOMContentLoaded', function() {
-        // Load supported platforms
-        fetch('/api/platforms')
-            .then(response => response.json())
-            .then(data => {
-                const container = document.getElementById('platformsContainer');
-                container.innerHTML = data.platforms.map(platform => `
-                    <div class="platform" title="${platform.name}">
-                        <div class="platform-icon">${platform.icon}</div>
-                        <div class="platform-name">${platform.name}</div>
-                    </div>
-                `).join('');
-            })
-            .catch(error => {
-                console.log('Could not load platforms, using defaults');
-            });
-        
-        // Handle cookie file upload
-        document.getElementById('cookieFile').addEventListener('change', function(event) {
-            const file = event.target.files[0];
-            if (file) {
-                const formData = new FormData();
-                formData.append('cookieFile', file);
-                
-                fetch('/api/upload-cookie', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        uploadedCookieFile = data.filename;
-                        alert('Cookie file uploaded successfully! It will be used for YouTube downloads.');
-                    } else {
-                        alert('Error uploading cookie file: ' + data.error);
-                    }
-                })
-                .catch(error => {
-                    alert('Error uploading cookie file: ' + error.message);
-                });
-            }
+    <!-- Single Download -->
+    <div class="mb-4">
+      <h2 class="text-lg font-semibold text-gray-800 mb-2">Single Video</h2>
+      <input 
+        id="videoUrl" 
+        type="text" 
+        placeholder="Enter video URL (e.g., Instagram, TikTok, YouTube)" 
+        class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+    </div>
+    <button 
+      id="downloadBtn" 
+      class="w-full bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 transition duration-200 mb-6"
+    >
+      Download Single Video
+    </button>
+    
+    <!-- Batch Download -->
+    <div class="mb-4">
+      <h2 class="text-lg font-semibold text-gray-800 mb-2">Batch Download</h2>
+      <textarea 
+        id="batchUrls" 
+        placeholder="Enter video URLs (one per line)" 
+        class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 h-32"
+      ></textarea>
+    </div>
+    <button 
+      id="batchDownloadBtn" 
+      class="w-full bg-green-500 text-white p-3 rounded-lg hover:bg-green-600 transition duration-200"
+    >
+      Download Batch as ZIP
+    </button>
+    
+    <p id="status" class="mt-4 text-center text-gray-600"></p>
+  </div>
+
+  <script>
+    const videoUrlInput = document.getElementById('videoUrl');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const batchUrlsInput = document.getElementById('batchUrls');
+    const batchDownloadBtn = document.getElementById('batchDownloadBtn');
+    const status = document.getElementById('status');
+
+    // Single Download
+    downloadBtn.addEventListener('click', async () => {
+      const url = videoUrlInput.value.trim();
+      
+      if (!url) {
+        status.textContent = 'Please enter a valid video URL';
+        status.classList.add('text-red-500');
+        return;
+      }
+
+      try {
+        new URL(url);
+      } catch {
+        status.textContent = 'Invalid URL format';
+        status.classList.add('text-red-500');
+        return;
+      }
+
+      status.classList.remove('text-red-500', 'text-green-500');
+      status.textContent = 'Processing...';
+
+      try {
+        const response = await fetch('http://localhost:3000/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
         });
-        
-        document.getElementById('downloadBtn').addEventListener('click', async function() {
-            const url = document.getElementById('videoUrl').value;
-            
-            if (!url) {
-                alert('Please enter a video URL');
-                return;
-            }
-            
-            // Determine which endpoint to use
-            let endpoint = '/api/download';
-            if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                endpoint = '/api/download/youtube';
-            } else if (url.includes('instagram.com')) {
-                endpoint = '/api/download/instagram';
-            } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
-                endpoint = '/api/download/tiktok';
-            } else if (url.includes('twitter.com') || url.includes('x.com')) {
-                endpoint = '/api/download/twitter';
-            }
-            
-            // Show loading
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('result').style.display = 'none';
-            
-            try {
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ 
-                        url,
-                        cookieFile: uploadedCookieFile
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    // Hide loading, show result
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('result').style.display = 'block';
-                    
-                    // Update result content
-                    document.getElementById('title').textContent = data.title || 'Video Ready';
-                    
-                    // Set up REAL download button
-                    document.getElementById('finalDownloadBtn').onclick = function() {
-                        if (data.downloadUrl) {
-                            // Create full URL
-                            let downloadUrl = data.downloadUrl;
-                            if (!downloadUrl.startsWith('http')) {
-                                downloadUrl = window.location.origin + downloadUrl;
-                            }
-                            
-                            console.log('Downloading from:', downloadUrl);
-                            
-                            // Create a temporary link and click it
-                            const link = document.createElement('a');
-                            link.href = downloadUrl;
-                            link.download = data.filename || 'video';
-                            link.style.display = 'none';
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
-                            
-                            // Alternative: Open in new tab
-                            // window.open(downloadUrl, '_blank');
-                        } else {
-                            alert('Download URL not available');
-                        }
-                    };
-                } else {
-                    throw new Error(data.error || 'Download failed');
-                }
-            } catch (error) {
-                document.getElementById('loading').style.display = 'none';
-                alert('Error: ' + error.message);
-            }
-        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          status.textContent = data.error || 'Failed to process video';
+          status.classList.add('text-red-500');
+          return;
+        }
+
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = 'video.mp4';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        status.textContent = 'Download started!';
+        status.classList.add('text-green-500');
+      } catch (error) {
+        status.textContent = 'Error: Unable to process request';
+        status.classList.add('text-red-500');
+        console.error('Error:', error);
+      }
     });
 
-    
+    // Batch Download
+    batchDownloadBtn.addEventListener('click', async () => {
+      const urls = batchUrlsInput.value
+        .trim()
+        .split('\n')
+        .map(url => url.trim())
+        .filter(url => url);
 
+      if (urls.length === 0) {
+        status.textContent = 'Please enter at least one valid video URL';
+        status.classList.add('text-red-500');
+        return;
+      }
 
-
-
-    
-
-
-
-// --- WORKING DOWNLOAD FUNCTION (PLACE THIS IN YOUR index.html <script> section) ---
-function triggerBrowserDownload(downloadUrl, filename) {
-    console.log("🔽 Frontend: triggerBrowserDownload called");
-    console.log("   Input downloadUrl:", downloadUrl);
-    console.log("   Input filename:", filename);
-
-    // --- ROBUST URL CONSTRUCTION ---
-    let finalUrlToUse = downloadUrl; // Default to the provided URL
-
-    // 1. Check if it's already an absolute URL
-    if (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://')) {
-        console.log("   ✅ downloadUrl is already absolute.");
-    } else if (downloadUrl.startsWith('/')) {
-        // 2. If it's a root-relative URL (e.g., /downloads/file.mp4)
-        console.log("   ℹ️ downloadUrl is root-relative. Constructing full URL...");
-        finalUrlToUse = window.location.origin + downloadUrl;
-        console.log("   🧮 Constructed full URL:", finalUrlToUse);
-    } else {
-        // 3. If it's path-relative (unlikely from your API, but handle anyway)
-        console.log("   ℹ️ downloadUrl is path-relative. Constructing full URL...");
-        // Use URL constructor for robust resolution
+      // Validate URLs
+      for (const url of urls) {
         try {
-            const resolvedUrl = new URL(downloadUrl, window.location.href);
-            finalUrlToUse = resolvedUrl.href;
-            console.log("   🧮 Constructed full URL:", finalUrlToUse);
-        } catch (urlError) {
-            console.error("   ❌ Error constructing URL with URL() constructor:", urlError);
-            // Fallback: prepend current path (less reliable)
-            const currentPath = window.location.pathname;
-            const basePath = currentPath.endsWith('/') ? currentPath : currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
-            finalUrlToUse = window.location.origin + basePath + downloadUrl;
-            console.log("   🧮 Fallback constructed full URL:", finalUrlToUse);
+          new URL(url);
+        } catch {
+          status.textContent = `Invalid URL: ${url}`;
+          status.classList.add('text-red-500');
+          return;
         }
-    }
+      }
 
-    console.log("   🎯 Final URL to trigger download:", finalUrlToUse);
+      status.classList.remove('text-red-500', 'text-green-500');
+      status.textContent = 'Processing batch download...';
 
-    try {
-        // --- METHOD 1: Programmatic Link Click (Preferred) ---
-        console.log("   🖱️ Attempting programmatic download via <a> tag click...");
+      try {
+        const response = await fetch('http://localhost:3000/batch-download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls })
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          status.textContent = data.error || 'Failed to process batch download';
+          status.classList.add('text-red-500');
+          return;
+        }
+
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = finalUrlToUse;
-        link.download = filename || 'video'; // Suggests filename to browser
-        link.target = '_blank'; // Opens in new tab if download doesn't trigger
-        link.rel = 'noopener noreferrer'; // Security best practice
-        // Make it invisible
-        link.style.position = 'absolute';
-        link.style.left = '-9999px';
-        link.style.visibility = 'hidden';
-
+        link.href = downloadUrl;
+        link.download = 'videos.zip';
         document.body.appendChild(link);
-        console.log("   📎 Appended link to body, now clicking...");
         link.click();
-        console.log("   ✅ Click event dispatched.");
         document.body.removeChild(link);
-        console.log("   🗑️ Link removed from body.");
+        window.URL.revokeObjectURL(downloadUrl);
 
-        // --- Optional: Fallback Timer (if download doesn't start) ---
-        // Detecting if a download started is hard. A simple fallback is
-        // to inform the user after a short delay.
-        /*
-        const fallbackTimeout = 5000; // 5 seconds
-        const fallbackTimer = setTimeout(() => {
-            console.warn("   ⏳ Fallback: Download might not have started. Suggesting manual action.");
-            alert(`If the download didn't start, you can try:\n1. Right-clicking the link and 'Save Link As...'\n2. Opening this URL directly: ${finalUrlToUse}`);
-            // window.open(finalUrlToUse, '_blank'); // Alternative: open in new tab
-        }, fallbackTimeout);
-        // If you had a way to detect success/failure, you'd clearTimeout(fallbackTimer) here.
-        */
+        status.textContent = 'Batch download started!';
+        status.classList.add('text-green-500');
+      } catch (error) {
+        status.textContent = 'Error: Unable to process batch request';
+        status.classList.add('text-red-500');
+        console.error('Error:', error);
+      }
+    });
 
-    } catch (clickError) {
-        console.error("   ❌ Critical error during programmatic download click:", clickError);
-        alert("An unexpected error occurred while trying to start the download. Please try again or check the browser console for details (Press F12).");
-    }
-}
-
-// --- ASSUMING YOU HAVE AN EVENT LISTENER LIKE THIS ---
-// Find the part where you attach the click handler to the "Download Now" button
-// It might look like this:
-/*
-document.getElementById('finalDownloadBtn').addEventListener('click', function() {
-    // ... code that gets data.downloadUrl and data.filename ...
-    triggerBrowserDownload(data.downloadUrl, data.filename);
-});
-*/
-// OR, if you set `onclick` directly in the HTML like `onclick="downloadVideoFile(...)"`
-// You need to make sure it calls `triggerBrowserDownload` with the correct arguments.
-
-
-
-
-
-
-</script>
-
+    // Clear status on input change
+    videoUrlInput.addEventListener('input', () => {
+      status.textContent = '';
+      status.classList.remove('text-red-500', 'text-green-500');
+    });
+    batchUrlsInput.addEventListener('input', () => {
+      status.textContent = '';
+      status.classList.remove('text-red-500', 'text-green-500');
+    });
+  </script>
 </body>
 </html>
