@@ -25,6 +25,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // CRITICAL: Serve downloaded videos with proper path resolution
 const downloadsDir = path.join(__dirname, 'downloads');
+console.log('📁 Downloads directory:', downloadsDir);
+
+// Serve static files from downloads directory with proper MIME types
 app.use('/downloads', express.static(downloadsDir, {
     setHeaders: (res, filePath) => {
         // Set proper content types for video files
@@ -34,6 +37,8 @@ app.use('/downloads', express.static(downloadsDir, {
             res.setHeader('Content-Type', 'video/webm');
         } else if (filePath.endsWith('.mkv')) {
             res.setHeader('Content-Type', 'video/x-matroska');
+        } else if (filePath.endsWith('.txt')) {
+            res.setHeader('Content-Type', 'text/plain');
         }
     }
 }));
