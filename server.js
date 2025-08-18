@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -9,20 +10,33 @@ console.log('=== SERVER STARTING ===');
 const app = express();
 const PORT = process.env.PORT || 10000; // Use Render's default port
 
-// Configure multer for cookie file uploads
-const upload = multer({ 
-    dest: 'cookies/',
-    limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB limit
+// --- MIDDLEWARE ---
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// --- DIRECTORIES & STATIC SERVING ---
+const downloadsDir = path.resolve(__dirname, 'downloads');
+const cookiesDir = path.resolve(__dirname, 'cookies');
+
+console.log(`📁 Downloads directory set to: ${downloadsDir}`);
+console.log(`📁 Cookies directory set to: ${cookiesDir}`);
+
+// Ensure directories exist
+[downloadsDir, cookiesDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        try {
+            fs.mkdirSync(dir, { recursive: true });
+            console.log(`✅ Created directory: ${dir}`);
+        } catch (err) {
+            console.error(`❌ Failed to create directory ${dir}:`, err);
+        }
+    } else {
+        console.log(`📁 Directory already exists: ${dir}`);
     }
 });
 
-// Middleware
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
-// CRITICAL: Serve downloaded videos with proper path resolution
-const downloadsDir = path.join(__dirname, 'downloads');
+// Serve static files from downloads and cookies with specific headers
 app.use('/downloads', express.static(downloadsDir, {
     setHeaders: (res, filePath) => {
         // Set proper content types for video files
@@ -33,67 +47,61 @@ app.use('/downloads', express.static(downloadsDir, {
         } else if (filePath.endsWith('.mkv')) {
             res.setHeader('Content-Type', 'video/x-matroska');
         }
+        // Add cache control headers to prevent aggressive caching of dynamic content
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
     }
 }));
 
-// Ensure downloads directory exists
-if (!fs.existsSync(downloadsDir)) {
-    fs.mkdirSync(downloadsDir, { recursive: true });
-    console.log('Created downloads directory:', downloadsDir);
-}
+app.use('/cookies', express.static(cookiesDir));
 
-// Serve cookie files (only for internal use)
-app.use('/cookies', express.static(path.join(__dirname, 'cookies')));
+// --- MULTER CONFIGURATION (FOR COOKIE UPLOADS) ---
+const upload = multer({
+    dest: cookiesDir, // Store uploaded cookies here temporarily
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    }
+});
 
-// Ensure cookies directory exists
-const cookiesDir = path.join(__dirname, 'cookies');
-if (!fs.existsSync(cookiesDir)) {
-    fs.mkdirSync(cookiesDir, { recursive: true });
-    console.log('Created cookies directory');
-}
-
-// Check if real downloads are enabled
+// --- yt-dlp SETUP ---
 const realDownloadsEnabled = fs.existsSync(path.join(__dirname, 'ENABLE_REAL_DOWNLOADS'));
-console.log('Real downloads enabled:', realDownloadsEnabled);
+console.log('🔧 Real downloads enabled flag (ENABLE_REAL_DOWNLOADS file exists):', realDownloadsEnabled);
 
-// Download yt-dlp if it doesn't exist and real downloads are enabled
 function ensureYtDlp() {
     return new Promise((resolve) => {
         if (!realDownloadsEnabled) {
-            console.log('Real downloads not enabled, skipping yt-dlp setup');
+            console.log('⏩ Real downloads not enabled, skipping yt-dlp setup.');
             resolve();
             return;
         }
-        
+
         const ytDlpPath = path.join(__dirname, 'yt-dlp');
-        
         if (fs.existsSync(ytDlpPath)) {
-            console.log('yt-dlp already exists');
-            // Ensure it's executable
+            console.log('✅ yt-dlp already exists at:', ytDlpPath);
             try {
                 fs.chmodSync(ytDlpPath, 0o755);
-                console.log('yt-dlp permissions set to executable');
+                console.log('✅ yt-dlp permissions ensured.');
             } catch (chmodError) {
-                console.error('Failed to set yt-dlp permissions:', chmodError);
+                console.error('⚠️ Could not set yt-dlp permissions:', chmodError.message);
             }
             resolve();
             return;
         }
-        
-        console.log('Downloading yt-dlp...');
+
+        console.log('🔽 Downloading yt-dlp...');
         const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
-        
+
         exec(downloadCommand, (error, stdout, stderr) => {
             if (error) {
-                console.error('Failed to download yt-dlp:', error);
-                console.log('Real downloads will fall back to simulation');
+                console.error('❌ Failed to download yt-dlp:', error.message);
+                console.log('⚠️ Real downloads will fall back to simulation.');
             } else {
-                // Make it executable
                 fs.chmod(ytDlpPath, 0o755, (chmodError) => {
                     if (chmodError) {
-                        console.error('Failed to make yt-dlp executable:', chmodError);
+                        console.error('❌ Failed to make yt-dlp executable:', chmodError.message);
                     } else {
-                        console.log('yt-dlp downloaded and made executable');
+                        console.log('✅ yt-dlp downloaded and made executable.');
                     }
                 });
             }
@@ -102,334 +110,257 @@ function ensureYtDlp() {
     });
 }
 
-// Initialize yt-dlp on startup
-ensureYtDlp();
+// --- CORE DOWNLOAD LOGIC (RELIABLE VERSION) ---
+function downloadVideo(url, cookieFilename = null) {
+    return new Promise((resolve, reject) => {
+        if (!realDownloadsEnabled) {
+            console.log('🧪 Real downloads not enabled, simulating');
+            const timestamp = Date.now();
+            const filename = `simulation_${timestamp}.txt`;
+            const filePath = path.join(downloadsDir, filename);
+            const content = `Download Simulation\nURL: ${url}\nTimestamp: ${new Date().toISOString()}\nReal downloads are disabled.`;
+            fs.writeFileSync(filePath, content);
+            const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+            resolve({ success: true, title: 'Simulation File', downloadUrl, filename, simulated: true });
+            return;
+        }
 
-// API Routes
+        const ytDlpPath = path.join(__dirname, 'yt-dlp');
+        if (!fs.existsSync(ytDlpPath)) {
+            const errorMsg = 'yt-dlp executable not found. Cannot proceed with download.';
+            console.error(`❌ ${errorMsg}`);
+            const timestamp = Date.now();
+            const filename = `error_noytdlp_${timestamp}.txt`;
+            fs.writeFileSync(path.join(downloadsDir, filename), errorMsg);
+            const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+            resolve({ success: true, title: 'yt-dlp Missing', downloadUrl, filename, error: true });
+            return;
+        }
+
+        try {
+            fs.accessSync(ytDlpPath, fs.constants.X_OK);
+        } catch (accessError) {
+            console.log('🔧 yt-dlp not executable, attempting fix...');
+            try {
+                fs.chmodSync(ytDlpPath, 0o755);
+                console.log('✅ yt-dlp permissions fixed.');
+            } catch (chmodError) {
+                const errorMsg = `Failed to make yt-dlp executable: ${chmodError.message}`;
+                console.error(`❌ ${errorMsg}`);
+                const timestamp = Date.now();
+                const filename = `error_permissions_${timestamp}.txt`;
+                fs.writeFileSync(path.join(downloadsDir, filename), errorMsg);
+                const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                resolve({ success: true, title: 'Permissions Error', downloadUrl, filename, error: true });
+                return;
+            }
+        }
+
+        // --- USE PREDICTABLE FILENAME TEMPLATE ---
+        const timestamp = Date.now();
+        const randomSuffix = Math.random().toString(36).substring(2, 8);
+        const baseOutputName = `video_${timestamp}_${randomSuffix}`;
+        const outputPathTemplate = path.join(downloadsDir, `${baseOutputName}.%(ext)s`);
+
+        console.log(`🔽 Starting real download for: ${url}`);
+        console.log(`💾 Output template: ${outputPathTemplate}`);
+
+        let downloadOptions = [
+            url,
+            '--no-check-certificate',
+            '--socket-timeout', '45',
+            '--retries', '2',
+            '--no-progress',
+            '-f', 'bv*[height<=?720]+ba/b',
+            '-o', outputPathTemplate,
+            '--newline'
+        ];
+
+        if (cookieFilename) {
+            const cookiePath = path.join(cookiesDir, cookieFilename);
+            if (fs.existsSync(cookiePath)) {
+                downloadOptions.push('--cookies', cookiePath);
+                console.log('🍪 Using cookies for authentication');
+            } else {
+                console.log('⚠️ Cookie file not found:', cookiePath);
+            }
+        }
+
+        const { spawn } = require('child_process'); // Ensure spawn is available
+        const ytDlpProcess = spawn(ytDlpPath, downloadOptions);
+
+        let stdoutData = '';
+        let stderrData = '';
+
+        ytDlpProcess.stdout.on('data', (data) => {
+            const chunk = data.toString();
+            stdoutData += chunk;
+            if (chunk.trim()) console.log('[yt-dlp OUT]:', chunk.trim().substring(0, 200));
+        });
+
+        ytDlpProcess.stderr.on('data', (data) => {
+            const chunk = data.toString();
+            stderrData += chunk;
+            if (chunk.trim()) console.log('[yt-dlp ERR]:', chunk.trim().substring(0, 200));
+        });
+
+        ytDlpProcess.on('error', (err) => {
+            console.error('[yt-dlp SPAWN ERROR]:', err);
+            const timestamp = Date.now();
+            const filename = `error_spawn_${timestamp}.txt`;
+            fs.writeFileSync(path.join(downloadsDir, filename), `Failed to start yt-dlp: ${err.message}\nURL: ${url}`);
+            reject(new Error(`Failed to start yt-dlp: ${err.message}`));
+        });
+
+        ytDlpProcess.on('close', (code) => {
+            console.log(`[yt-dlp PROCESS CLOSED] Exit code: ${code}`);
+
+            if (code === 0) {
+                console.log("✅ yt-dlp reported success. Searching for file...");
+                // --- FIND FILE USING BASE NAME ---
+                fs.readdir(downloadsDir, (readErr, files) => {
+                    if (readErr) {
+                        console.error("❌ Error reading downloads dir:", readErr);
+                        reject(new Error(`Could not read downloads directory: ${readErr.message}`));
+                        return;
+                    }
+
+                    const matchingFiles = files.filter(file =>
+                        file.startsWith(baseOutputName) && file !== '.' && file !== '..'
+                    );
+
+                    console.log(`🔍 Found ${matchingFiles.length} matching file(s) for '${baseOutputName}'`);
+
+                    if (matchingFiles.length === 1) {
+                        const filename = matchingFiles[0];
+                        const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                        const title = filename.replace(/\.[^/.]+$/, "");
+                        console.log(`🎉 Successfully located file: ${filename}`);
+                        resolve({ success: true, title, downloadUrl, filename });
+                    } else if (matchingFiles.length > 1) {
+                        console.warn("⚠️ Multiple matching files found. Picking the newest.");
+                        const sortedMatches = matchingFiles.map(f => ({
+                            file: f,
+                            mtime: fs.statSync(path.join(downloadsDir, f)).mtime
+                        })).sort((a, b) => b.mtime - a.mtime);
+
+                        const filename = sortedMatches[0].file;
+                        const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                        const title = filename.replace(/\.[^/.]+$/, "");
+                        console.log(`🎯 Picked newest file: ${filename}`);
+                        resolve({ success: true, title, downloadUrl, filename });
+                    } else {
+                        console.error(`💥 yt-dlp success (code 0) but no file '${baseOutputName}*' found.`);
+                        console.error("--- yt-dlp STDOUT ---"); console.error(stdoutData.substring(0, 500));
+                        console.error("--- yt-dlp STDERR ---"); console.error(stderrData.substring(0, 500));
+                        console.error("--- Files in Dir ---"); console.error(files);
+
+                        // Ultimate fallback: any recent file?
+                        const recentFiles = files
+                            .filter(f => f !== '.' && f !== '..')
+                            .map(f => ({ file: f, mtime: fs.statSync(path.join(downloadsDir, f)).mtime }))
+                            .filter(item => (Date.now() - item.mtime.getTime()) < 15000) // Last 15s
+                            .sort((a, b) => b.mtime - a.mtime);
+
+                        if (recentFiles.length > 0) {
+                            const filename = recentFiles[0].file;
+                            const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                            const title = filename.replace(/\.[^/.]+$/, "");
+                            console.warn(`🧭 Ultimate fallback found recent file: ${filename}`);
+                            resolve({ success: true, title, downloadUrl, filename });
+                        } else {
+                            const timestamp = Date.now();
+                            const filename = `error_notfound_${timestamp}.txt`;
+                            const content = `Download process reported success, but the file could not be located.\nExpected base: ${baseOutputName}\nURL: ${url}\nTime: ${new Date().toISOString()}\n--- Output ---\nSTDOUT:\n${stdoutData}\nSTDERR:\n${stderrData}`;
+                            fs.writeFileSync(path.join(downloadsDir, filename), content);
+                            const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                            resolve({ success: true, title: 'File Not Found', downloadUrl, filename, error: true });
+                        }
+                    }
+                });
+            } else {
+                console.error(`💥 yt-dlp failed with exit code ${code}`);
+                console.error("--- yt-dlp STDOUT ---"); console.error(stdoutData.substring(0, 500));
+                console.error("--- yt-dlp STDERR ---"); console.error(stderrData.substring(0, 500));
+
+                const timestamp = Date.now();
+                const filename = `error_failed_${code}_${timestamp}.txt`;
+                const content = `Download failed!\nURL: ${url}\nExit Code: ${code}\nTime: ${new Date().toISOString()}\n--- Output ---\nSTDOUT:\n${stdoutData}\nSTDERR:\n${stderrData}`;
+                fs.writeFileSync(path.join(downloadsDir, filename), content);
+                const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                resolve({ success: true, title: 'Download Failed', downloadUrl, filename, error: true });
+            }
+        });
+    });
+}
+
+// --- API ROUTES ---
+app.get('/health', (req, res) => {
+    console.log('🩺 GET /health');
+    res.json({
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        realDownloads: realDownloadsEnabled,
+        downloadsDir,
+        cookiesDir
+    });
+});
+
+app.get('/api/downloads', (req, res) => {
+    console.log('🔍 GET /api/downloads - Debug endpoint');
+    fs.readdir(downloadsDir, (err, files) => {
+        if (err) {
+            console.error('❌ Error reading downloads dir:', err);
+            return res.status(500).json({ error: 'Could not read downloads directory', details: err.message });
+        }
+        res.json({ success: true, files, count: files.length, downloadsDir });
+    });
+});
+
 app.get('/api/platforms', (req, res) => {
-    console.log('GET /api/platforms');
+    console.log('🌐 GET /api/platforms');
     res.json({
         platforms: [
             { name: 'YouTube', key: 'youtube', icon: '📺' },
             { name: 'Instagram', key: 'instagram', icon: '📱' },
             { name: 'TikTok', key: 'tiktok', icon: '🎵' },
             { name: 'Twitter/X', key: 'twitter', icon: '🐦' },
-            { name: 'Other Platforms', key: 'generic', icon: '🔗' }
+            { name: 'Generic', key: 'generic', icon: '🔗' }
         ]
     });
 });
 
-app.get('/health', (req, res) => {
-    console.log('GET /health');
-    const ytDlpPath = path.join(__dirname, 'yt-dlp');
-    const ytDlpExists = fs.existsSync(ytDlpPath);
-    const ytDlpExecutable = ytDlpExists ? fs.statSync(ytDlpPath).mode : 0;
-    
-    res.json({ 
-        status: 'OK', 
-        timestamp: new Date().toISOString(),
-        realDownloads: realDownloadsEnabled,
-        ytDlpInstalled: ytDlpExists,
-        ytDlpExecutable: ytDlpExists ? (ytDlpExecutable & 0o111) !== 0 : false,
-        downloadsDir: downloadsDir
-    });
-});
-
-// === COOKIE UPLOAD ENDPOINT ===
 app.post('/api/upload-cookie', upload.single('cookieFile'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'No cookie file uploaded' });
-    }
-    
-    console.log('Cookie file uploaded:', req.file.originalname);
-    
-    // Rename to more descriptive name
+    if (!req.file) return res.status(400).json({ error: 'No cookie file uploaded' });
+    console.log('🍪 Cookie file uploaded:', req.file.originalname);
     const newFilename = `cookies_${Date.now()}.txt`;
     const newPath = path.join(cookiesDir, newFilename);
-    
     fs.rename(req.file.path, newPath, (err) => {
         if (err) {
-            console.error('Error renaming cookie file:', err);
+            console.error('❌ Error renaming cookie file:', err);
             return res.status(500).json({ error: 'Failed to process cookie file' });
         }
-        
-        res.json({
-            success: true,
-            message: 'Cookie file uploaded successfully',
-            filename: newFilename,
-            path: newPath
-        });
+        res.json({ success: true, message: 'Cookie file uploaded', filename: newFilename, path: newPath });
     });
 });
 
-// === DOWNLOAD FUNCTION WITH COOKIE SUPPORT ===
-function downloadVideo(url, cookieFilename = null) {
-    return new Promise((resolve, reject) => {
-        if (!realDownloadsEnabled) {
-            console.log('Real downloads not enabled, simulating');
-            setTimeout(() => {
-                const timestamp = new Date().getTime();
-                const filename = `video-${timestamp}.txt`;
-                const filePath = path.join(downloadsDir, filename);
-                
-                const content = `Video Download Request Received!\n\nURL: ${url}\n\nReal downloads are currently disabled.\nTo enable real downloads:\n1. Add ENABLE_REAL_DOWNLOADS file to your project\n2. Deploy the update\n3. Try downloading again\n\nRequest time: ${new Date().toISOString()}`;
-                fs.writeFileSync(filePath, content);
-                
-                resolve({
-                    success: true,
-                    title: 'Download Simulation',
-                    downloadUrl: `/downloads/${filename}`,
-                    filename: filename,
-                    simulated: true
-                });
-            }, 1000);
-            return;
-        }
-        
-        const ytDlpPath = path.join(__dirname, 'yt-dlp');
-        
-        // Check if yt-dlp exists and is executable
-        if (!fs.existsSync(ytDlpPath)) {
-            console.log('yt-dlp not found, simulating download');
-            setTimeout(() => {
-                const timestamp = new Date().getTime();
-                const filename = `video-${timestamp}.txt`;
-                const filePath = path.join(downloadsDir, filename);
-                
-                const content = `yt-dlp not found. Please wait for automatic setup or check logs.\n\nURL: ${url}\n\nRequest time: ${new Date().toISOString()}`;
-                fs.writeFileSync(filePath, content);
-                
-                resolve({
-                    success: true,
-                    title: 'yt-dlp Setup Required',
-                    downloadUrl: `/downloads/${filename}`,
-                    filename: filename,
-                    setupRequired: true
-                });
-            }, 1000);
-            return;
-        }
-        
-        // Ensure yt-dlp is executable
-        try {
-            fs.accessSync(ytDlpPath, fs.constants.X_OK);
-            console.log('yt-dlp is executable');
-        } catch (accessError) {
-            console.log('yt-dlp not executable, attempting to fix permissions');
-            try {
-                fs.chmodSync(ytDlpPath, 0o755);
-                console.log('yt-dlp permissions fixed');
-            } catch (chmodError) {
-                console.error('Failed to fix yt-dlp permissions:', chmodError);
-                reject(new Error('yt-dlp is not executable and cannot be made executable'));
-                return;
-            }
-        }
-        
-        console.log('Starting real download for:', url);
-        
-        const { spawn } = require('child_process');
-        
-        // Build download options
-        let downloadOptions = [
-            url,
-            '--no-check-certificate',
-            '--socket-timeout', '30',
-            '--retries', '3',
-            '-f', 'bv*+ba/b',
-            '-o', path.join(downloadsDir, '%(title)s.%(ext)s'),
-            '--newline'
-        ];
-        
-        // Add cookie support if available
-        if (cookieFilename) {
-            const cookiePath = path.join(cookiesDir, cookieFilename);
-            if (fs.existsSync(cookiePath)) {
-                downloadOptions.push('--cookies', cookiePath);
-                console.log('Using cookies for authentication');
-            } else {
-                console.log('Cookie file not found:', cookiePath);
-            }
-        }
-        
-        const ytDlpProcess = spawn(ytDlpPath, downloadOptions);
-        
-        let output = '';
-        let errorOutput = '';
-        
-        ytDlpProcess.on('error', (err) => {
-            console.error('yt-dlp process error:', err);
-            reject(new Error(`Failed to start yt-dlp: ${err.message}`));
-        });
-        
-        ytDlpProcess.stdout.on('data', (data) => {
-            output += data.toString();
-            console.log('yt-dlp output:', data.toString().trim());
-        });
-        
-        ytDlpProcess.stderr.on('data', (data) => {
-            errorOutput += data.toString();
-            console.log('yt-dlp error:', data.toString().trim());
-        });
-        
-        ytDlpProcess.on('close', (code) => {
-            console.log(`yt-dlp process exited with code ${code}`);
-            
-            if (code === 0) {
-                try {
-                    const files = fs.readdirSync(downloadsDir);
-                    if (files.length > 0) {
-                        // Get the most recent file
-                        const recentFiles = files
-                            .map(file => ({ file, mtime: fs.statSync(path.join(downloadsDir, file)).mtime }))
-                            .sort((a, b) => b.mtime - a.mtime);
-                        
-                        const recentFile = recentFiles[0].file;
-                        // CRITICAL: Use proper URL encoding
-                        const downloadUrl = `/downloads/${encodeURIComponent(recentFile)}`;
-                        
-                        resolve({
-                            success: true,
-                            title: recentFile.replace(/\.[^/.]+$/, ""),
-                            downloadUrl: downloadUrl,
-                            filename: recentFile
-                        });
-                    } else {
-                        reject(new Error('No files found after download'));
-                    }
-                } catch (fileError) {
-                    reject(new Error('Could not read downloads directory: ' + fileError.message));
-                }
-            } else {
-                const timestamp = new Date().getTime();
-                const filename = `download-error-${timestamp}.txt`;
-                const filePath = path.join(downloadsDir, filename);
-                
-                const content = `Download Failed!\n\nURL: ${url}\n\nError Code: ${code}\nError Output: ${errorOutput || 'Unknown error'}\n\nTime: ${new Date().toISOString()}`;
-                fs.writeFileSync(filePath, content);
-                
-                resolve({
-                    success: true,
-                    title: 'Download Failed - Check File',
-                    downloadUrl: `/downloads/${filename}`,
-                    filename: filename,
-                    error: true
-                });
-            }
-        });
-    });
-}
-
-// Download endpoints with cookie support
-app.post('/api/download/youtube', async (req, res) => {
-    const { url, cookieFile } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download/youtube - URL:', url, 'Cookie:', cookieFile || 'None');
-    
-    try {
-        const result = await downloadVideo(url, cookieFile);
-        res.json(result);
-    } catch (error) {
-        console.error('YouTube download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Try a different YouTube video or check if the video is available.'
-        });
-    }
-});
-
-app.post('/api/download/instagram', async (req, res) => {
-    const { url, cookieFile } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download/instagram - URL:', url);
-    
-    try {
-        const result = await downloadVideo(url, cookieFile);
-        res.json(result);
-    } catch (error) {
-        console.error('Instagram download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Instagram often blocks automated downloads. Try a public video.'
-        });
-    }
-});
-
-app.post('/api/download/tiktok', async (req, res) => {
-    const { url, cookieFile } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download/tiktok - URL:', url);
-    
-    try {
-        const result = await downloadVideo(url, cookieFile);
-        res.json(result);
-    } catch (error) {
-        console.error('TikTok download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Try a different TikTok video or check if the video is public.'
-        });
-    }
-});
-
-app.post('/api/download/twitter', async (req, res) => {
-    const { url, cookieFile } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download/twitter - URL:', url);
-    
-    try {
-        const result = await downloadVideo(url, cookieFile);
-        res.json(result);
-    } catch (error) {
-        console.error('Twitter download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Try a different Twitter video or check if the video is public.'
-        });
-    }
-});
-
+// Unified download endpoint
 app.post('/api/download', async (req, res) => {
     const { url, cookieFile } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ error: 'URL is required' });
-    }
-    
-    console.log('POST /api/download - URL:', url);
-    
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+    console.log('🔽 POST /api/download - URL:', url);
     try {
         const result = await downloadVideo(url, cookieFile);
+        console.log("📤 Sending result for", url.substring(0, 50)+"...", ":", result.filename || "error");
         res.json(result);
     } catch (error) {
-        console.error('Generic download error:', error);
-        res.status(500).json({ 
-            error: error.message,
-            tip: 'Try a different video URL or check if the content is publicly available.'
-        });
+        console.error('❌ Download error for URL:', url, error);
+        res.status(500).json({ error: error.message });
     }
 });
 
-// Batch download endpoint
-// Place this with your other API routes in server.js
+// --- BATCH DOWNLOAD ENDPOINT ---
 app.post('/api/download/batch', async (req, res) => {
-    // --- CRITICAL: LOG THE INCOMING REQUEST ---
     console.log('--- RECEIVED BATCH REQUEST ---');
     console.log('POST /api/download/batch');
     console.log('Headers:', req.headers);
@@ -448,7 +379,7 @@ app.post('/api/download/batch', async (req, res) => {
 
     try {
         // Respond to the client immediately
-        res.status(202).json({ // 202 Accepted is often used for async processing
+        res.status(202).json({
             success: true,
             message: `Batch download started for ${numUrls} videos. Processing in background.`,
             total: numUrls,
@@ -458,11 +389,9 @@ app.post('/api/download/batch', async (req, res) => {
         console.log(`📤 Responsed to client. Now processing ${numUrls} videos in background...`);
 
         // --- BACKGROUND PROCESSING ---
-        // Use an IIFE to handle async processing without blocking the response
         (async () => {
             console.log(`🚀 Background Task: Starting batch processing for ${numUrls} videos`);
             
-            // Array to store results (optional, for future enhancements like reporting)
             const results = [];
 
             for (let i = 0; i < urls.length; i++) {
@@ -472,8 +401,6 @@ app.post('/api/download/batch', async (req, res) => {
                 console.log(`${currentItemLogPrefix} 🔽 Starting download for: ${url.substring(0, 100)}${url.length > 100 ? '...' : ''}`);
 
                 try {
-                    // --- CALL THE EXISTING downloadVideo FUNCTION ---
-                    // This is the key: reuse your proven single download logic.
                     const downloadResult = await downloadVideo(url, null); // Pass cookie if needed
 
                     console.log(`${currentItemLogPrefix} ✅ Completed. Result:`, {
@@ -493,7 +420,6 @@ app.post('/api/download/batch', async (req, res) => {
                 } catch (itemError) {
                     console.error(`${currentItemLogPrefix} ❌ Failed.`, url, itemError.message);
                     results.push({ index: i, url, status: 'failed', error: itemError.message });
-
                     // Continue with the next item even if one fails
                 }
             }
@@ -508,66 +434,61 @@ app.post('/api/download/batch', async (req, res) => {
                 }
             });
             console.log('------------------------------');
-            // Here you could potentially emit events or store results for later retrieval
-            // if you implement real-time updates (e.g., with WebSockets).
 
-        })(); // Invoke the async function immediately
+        })();
 
     } catch (backgroundError) {
-        // This catch block handles errors in setting up the background task itself,
-        // NOT errors during the downloading of individual videos.
-        // Since we've already sent the response, we can only log.
         console.error("🔥 UNEXPECTED ERROR in batch background setup:", backgroundError);
         // Cannot send a response here as it's already been sent.
-        // The client has been informed that the job started.
     }
 });
 
-// Serve main pages
+// --- SERVE MAIN PAGES ---
 app.get('/', (req, res) => {
-    console.log('GET / - Serving main page');
+    console.log('🏠 GET /');
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/batch.html', (req, res) => {
-    console.log('GET /batch.html');
+    console.log('📦 GET /batch.html');
     res.sendFile(path.join(__dirname, 'public', 'batch.html'));
 });
 
-// Add endpoint to list downloaded files
-app.get('/api/downloads', (req, res) => {
-    try {
-        const files = fs.readdirSync(downloadsDir);
-        res.json({
-            success: true,
-            files: files,
-            downloadsDir: downloadsDir
-        });
-    } catch (error) {
-        res.status(500).json({ error: 'Could not read downloads directory' });
-    }
-});
-
-// Catch all 404s
-app.use('*', (req, res) => {
-    console.log('404 for:', req.path);
-    res.status(404).json({ 
-        error: 'Not found',
-        path: req.path
+// --- ERROR HANDLING ---
+// Catch-all for unmatched routes (must be AFTER all defined routes)
+app.use((req, res) => {
+    console.log(`404 - Unmatched route: ${req.method} ${req.path}`);
+    res.status(404).json({
+        error: 'Route not found',
+        path: req.path,
+        method: req.method
     });
 });
 
-// Global error handler
-app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+// Global error handler (must be LAST middleware)
+app.use((err, req, res, next) => { // next param is REQUIRED
+    console.error('🔥 Unhandled error:', err);
+    if (!res.headersSent) {
+        res.status(500).json({ error: 'Internal server error', message: err.message });
+    } else {
+        console.error("Error occurred after headers sent, cannot send error response:", err);
+    }
 });
 
-// CRITICAL: Bind to 0.0.0.0 as required by Render
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log('Downloads directory:', downloadsDir);
-    console.log('Real downloads enabled:', realDownloadsEnabled);
+// --- INITIALIZE & START ---
+ensureYtDlp().then(() => {
+    console.log("🚀 yt-dlp setup check completed.");
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+        console.log(`📂 Serving downloads from: ${downloadsDir}`);
+        console.log(`🧪 Test URLs:`);
+        console.log(`   http://localhost:${PORT}/`);
+        console.log(`   http://localhost:${PORT}/health`);
+        console.log(`   http://localhost:${PORT}/api/downloads`);
+    });
+}).catch(err => {
+    console.error("💥 Fatal error during initialization:", err);
+    process.exit(1);
 });
 
 console.log('=== SERVER SETUP COMPLETE ===');
