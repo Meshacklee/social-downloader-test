@@ -1,8 +1,9 @@
+// server.js
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { exec, spawn } = require('child_process');
-const multer = require('multer');
+const { spawn } = require('child_process');
+const multer = require('multer'); // <-- Make sure this is required
 
 console.log('=== SERVER STARTING ===');
 
@@ -39,6 +40,15 @@ console.log(`📁 Cookies directory set to: ${cookiesDir}`);
 app.use('/downloads', express.static(downloadsDir));
 app.use('/cookies', express.static(cookiesDir));
 
+// --- MULTER CONFIGURATION (FOR COOKIE UPLOADS) ---
+// This was missing, causing the ReferenceError
+const upload = multer({
+    dest: cookiesDir, // Store uploaded cookies here temporarily
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    }
+});
+
 // --- yt-dlp SETUP ---
 const realDownloadsEnabled = fs.existsSync(path.join(__dirname, 'ENABLE_REAL_DOWNLOADS'));
 console.log('🔧 Real downloads enabled flag (ENABLE_REAL_DOWNLOADS file exists):', realDownloadsEnabled);
@@ -65,14 +75,12 @@ function ensureYtDlp() {
         }
 
         console.log('🔽 Downloading yt-dlp...');
-        // Ensure curl is used correctly for binary download
         const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
 
-        exec(downloadCommand, (error, stdout, stderr) => {
-            if (error) {
-                console.error('❌ Failed to download yt-dlp:', error.message);
-                console.log('⚠️ Real downloads will fall back to simulation.');
-            } else {
+        const child = spawn(downloadCommand, { shell: true });
+
+        child.on('close', (code) => {
+            if (code === 0) {
                 fs.chmod(ytDlpPath, 0o755, (chmodError) => {
                     if (chmodError) {
                         console.error('❌ Failed to make yt-dlp executable:', chmodError.message);
@@ -80,6 +88,9 @@ function ensureYtDlp() {
                         console.log('✅ yt-dlp downloaded and made executable.');
                     }
                 });
+            } else {
+                console.error(`❌ yt-dlp download failed with code ${code}`);
+                console.log('⚠️ Real downloads will fall back to simulation.');
             }
             resolve();
         });
@@ -107,8 +118,7 @@ function downloadVideo(url, cookieFilename = null) {
             console.error(`❌ ${errorMsg}`);
             const timestamp = Date.now();
             const filename = `error_noytdlp_${timestamp}.txt`;
-            const filePath = path.join(downloadsDir, filename);
-            fs.writeFileSync(filePath, errorMsg);
+            fs.writeFileSync(path.join(downloadsDir, filename), errorMsg);
             const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
             resolve({ success: true, title: 'yt-dlp Missing', downloadUrl, filename, error: true });
             return;
@@ -145,10 +155,10 @@ function downloadVideo(url, cookieFilename = null) {
         let downloadOptions = [
             url,
             '--no-check-certificate',
-            '--socket-timeout', '45', // Increased timeout
+            '--socket-timeout', '45',
             '--retries', '2',
-            '--no-progress', // Cleaner logs
-            '-f', 'bv*[height<=?720]+ba/b', // Reasonable format
+            '--no-progress',
+            '-f', 'bv*[height<=?720]+ba/b', // Good balance for most platforms
             '-o', outputPathTemplate, // CRITICAL: Our predictable template
             '--newline'
         ];
@@ -171,14 +181,12 @@ function downloadVideo(url, cookieFilename = null) {
         ytDlpProcess.stdout.on('data', (data) => {
             const chunk = data.toString();
             stdoutData += chunk;
-            // Limit log spam
             if (chunk.trim()) console.log('[yt-dlp OUT]:', chunk.trim().substring(0, 200));
         });
 
         ytDlpProcess.stderr.on('data', (data) => {
             const chunk = data.toString();
             stderrData += chunk;
-            // Limit log spam
             if (chunk.trim()) console.log('[yt-dlp ERR]:', chunk.trim().substring(0, 200));
         });
 
@@ -308,20 +316,34 @@ app.get('/api/platforms', (req, res) => {
     });
 });
 
+// --- COOKIE UPLOAD ENDPOINT ---
 app.post('/api/upload-cookie', upload.single('cookieFile'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'No cookie file uploaded' });
+    // Use the 'upload' middleware defined above
+    if (!req.file) {
+        return res.status(400).json({ error: 'No cookie file uploaded' });
+    }
     console.log('🍪 Cookie file uploaded:', req.file.originalname);
+    
+    // Rename to a more descriptive name
     const newFilename = `cookies_${Date.now()}.txt`;
+    const oldPath = req.file.path; // Multer's temporary path
     const newPath = path.join(cookiesDir, newFilename);
-    fs.rename(req.file.path, newPath, (err) => {
+
+    fs.rename(oldPath, newPath, (err) => {
         if (err) {
             console.error('❌ Error renaming cookie file:', err);
             return res.status(500).json({ error: 'Failed to process cookie file' });
         }
-        res.json({ success: true, message: 'Cookie file uploaded', filename: newFilename, path: newPath });
+        res.json({
+            success: true,
+            message: 'Cookie file uploaded successfully',
+            filename: newFilename,
+            path: newPath
+        });
     });
 });
 
+// --- DOWNLOAD ENDPOINTS ---
 // Unified download endpoint
 app.post('/api/download', async (req, res) => {
     const { url, cookieFile } = req.body;
@@ -336,8 +358,56 @@ app.post('/api/download', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-// You can remove the platform-specific endpoints if you want to simplify,
-// or keep them delegating to /api/download if preferred.
+
+// --- BATCH DOWNLOAD ENDPOINT ---
+// This will handle multiple URLs sequentially
+app.post('/api/download/batch', async (req, res) => {
+    const { urls } = req.body;
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+        return res.status(400).json({ error: 'URLs array is required' });
+    }
+    console.log('📦 Batch download requested for', urls.length, 'videos');
+
+    // Respond immediately to the client
+    res.json({
+        success: true,
+        message: `Batch download started for ${urls.length} videos. Processing in background.`,
+        total: urls.length
+    });
+
+    // Process the batch asynchronously in the background
+    // In a production app, you'd use a proper job queue (e.g., BullMQ, Agenda)
+    (async () => {
+        console.log('🚀 Starting asynchronous batch processing for', urls.length, 'videos');
+        for (let i = 0; i < urls.length; i++) {
+            const url = urls[i];
+            console.log(`📦 Processing batch video ${i + 1}/${urls.length}: ${url.substring(0, 100)}...`);
+            try {
+                // Add a small delay between downloads to be respectful
+                if (i > 0) await new Promise(r => setTimeout(r, 3000));
+                
+                const result = await downloadVideo(url, null); // No cookies for batch for now
+                console.log(`✅ Completed batch video ${i + 1}: ${result.title || result.filename}`);
+                
+                // --- HERE YOU COULD EMIT REAL-TIME UPDATES ---
+                // For example, using WebSockets (Socket.IO) or Server-Sent Events (SSE)
+                // to inform the frontend that video `i` is done.
+                // For now, we just log it.
+                // Example (conceptual):
+                // io.emit('batchProgress', { index: i, status: 'completed', result });
+                
+            } catch (error) {
+                console.error(`❌ Error processing batch video ${i + 1}:`, url, error.message);
+                // Log the error but continue processing the rest of the batch
+                // io.emit('batchProgress', { index: i, status: 'error', error: error.message });
+            }
+        }
+        console.log('🏁 Asynchronous batch processing completed for all', urls.length, 'videos');
+        // io.emit('batchComplete', { message: 'All videos processed' });
+    })().catch(err => {
+        console.error("🔥 Unexpected error in batch background task:", err);
+    });
+});
 
 // --- SERVE MAIN PAGES ---
 app.get('/', (req, res) => {
@@ -351,15 +421,23 @@ app.get('/batch.html', (req, res) => {
 });
 
 // --- ERROR HANDLING ---
+// Catch-all for unmatched routes (must be AFTER all defined routes)
 app.use((req, res) => {
     console.log(`404 - Unmatched route: ${req.method} ${req.path}`);
-    res.status(404).json({ error: 'Route not found', path: req.path, method: req.method });
+    res.status(404).json({
+        error: 'Route not found',
+        path: req.path,
+        method: req.method
+    });
 });
 
-app.use((err, req, res, next) => {
+// Global error handler (must be LAST middleware)
+app.use((err, req, res, next) => { // next param is REQUIRED for Express to recognize it as error handler
     console.error('🔥 Unhandled error:', err);
     if (!res.headersSent) {
         res.status(500).json({ error: 'Internal server error', message: err.message });
+    } else {
+        console.error("Error occurred after headers sent, cannot send error response:", err);
     }
 });
 
