@@ -69,93 +69,246 @@ const realDownloadsEnabled = fs.existsSync(path.join(__dirname, 'ENABLE_REAL_DOW
 console.log('Real downloads enabled:', realDownloadsEnabled);
 
 // Download yt-dlp if it doesn't exist and real downloads are enabled
-function ensureYtDlp() {
-    return new Promise((resolve) => {
+// === CORE DOWNLOAD FUNCTION (IMPROVED FOR RELIABILITY) ===
+function downloadVideo(url, cookieFilename = null) {
+    return new Promise((resolve, reject) => {
+        // --- 0. Check if downloads are enabled ---
         if (!realDownloadsEnabled) {
-            console.log('Real downloads not enabled, skipping yt-dlp setup');
-            resolve();
+            console.log('Real downloads not enabled, simulating');
+            const timestamp = Date.now();
+            const filename = `simulation_${timestamp}.txt`;
+            const filePath = path.join(downloadsDir, filename);
+            const content = `Download Simulation\nURL: ${url}\nTimestamp: ${new Date().toISOString()}\nReal downloads are disabled.`;
+            fs.writeFileSync(filePath, content);
+            const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+            resolve({ success: true, title: 'Simulation File', downloadUrl, filename, simulated: true });
             return;
         }
 
+        // --- 1. Ensure yt-dlp exists and is executable ---
         const ytDlpPath = path.join(__dirname, 'yt-dlp');
+        if (!fs.existsSync(ytDlpPath)) {
+            const errorMsg = 'yt-dlp executable not found. Cannot proceed with download.';
+            console.error(errorMsg);
+            const timestamp = Date.now();
+            const filename = `error_noytdlp_${timestamp}.txt`;
+            const filePath = path.join(downloadsDir, filename);
+            fs.writeFileSync(filePath, errorMsg);
+            const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+            resolve({ success: true, title: 'yt-dlp Missing', downloadUrl, filename, error: true });
+            return;
+        }
 
-        if (fs.existsSync(ytDlpPath)) {
-            console.log('yt-dlp already exists');
-            // Ensure it's executable
+        try {
+            fs.accessSync(ytDlpPath, fs.constants.X_OK);
+        } catch (accessError) {
+            console.log('yt-dlp not executable, attempting fix...');
             try {
                 fs.chmodSync(ytDlpPath, 0o755);
-                console.log('yt-dlp permissions set to executable');
+                console.log('yt-dlp permissions fixed.');
             } catch (chmodError) {
-                console.error('Failed to set yt-dlp permissions:', chmodError);
+                const errorMsg = `Failed to make yt-dlp executable: ${chmodError.message}`;
+                console.error(errorMsg);
+                const timestamp = Date.now();
+                const filename = `error_permissions_${timestamp}.txt`;
+                const filePath = path.join(downloadsDir, filename);
+                fs.writeFileSync(filePath, errorMsg);
+                const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                resolve({ success: true, title: 'Permissions Error', downloadUrl, filename, error: true });
+                return;
             }
-            resolve();
-            return;
         }
 
-        console.log('Downloading yt-dlp...');
-        // Use wget if curl is problematic on Render, or ensure curl is available
-        const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
-        // Alternative: const downloadCommand = 'wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O yt-dlp';
+        // --- 2. Define a unique, predictable output filename ---
+        const timestamp = Date.now();
+        const randomSuffix = Math.random().toString(36).substring(2, 8);
+        // Use a base name, avoiding special chars that might cause issues
+        const baseOutputName = `download_${timestamp}_${randomSuffix}`;
+        // Tell yt-dlp to save it as baseName.ext (e.g., download_12345_abc123.mp4)
+        const outputPathTemplate = path.join(downloadsDir, `${baseOutputName}.%(ext)s`);
 
-        exec(downloadCommand, (error, stdout, stderr) => {
-            if (error) {
-                console.error('Failed to download yt-dlp:', error);
-                console.log('Real downloads will fall back to simulation');
+        console.log(`Starting real download for: ${url}`);
+        console.log(`Output will be saved using template: ${outputPathTemplate}`);
+
+        // --- 3. Build yt-dlp arguments ---
+        let downloadOptions = [
+            url,
+            '--no-check-certificate',
+            '--socket-timeout', '30',
+            '--retries', '2',
+            '--no-progress', // Cleaner output
+            '-f', 'bv*[height<=?720]+ba/b', // Slightly better format selection for common use
+            '-o', outputPathTemplate, // CRITICAL: Use our predictable template
+            '--newline'
+            // Removed --print for simplicity in this iteration, rely on template
+        ];
+
+        // Add cookies if provided
+        if (cookieFilename) {
+            const cookiePath = path.join(cookiesDir, cookieFilename);
+            if (fs.existsSync(cookiePath)) {
+                downloadOptions.push('--cookies', cookiePath);
+                console.log('Using cookies for authentication');
             } else {
-                // Make it executable
-                fs.chmod(ytDlpPath, 0o755, (chmodError) => {
-                    if (chmodError) {
-                        console.error('Failed to make yt-dlp executable:', chmodError);
+                console.log('Cookie file not found:', cookiePath);
+            }
+        }
+
+        // --- 4. Spawn yt-dlp process ---
+        const ytDlpProcess = spawn(ytDlpPath, downloadOptions);
+
+        let stdoutData = '';
+        let stderrData = '';
+
+        ytDlpProcess.stdout.on('data', (data) => {
+            const chunk = data.toString();
+            stdoutData += chunk;
+            console.log('[yt-dlp STDOUT]:', chunk.trim());
+        });
+
+        ytDlpProcess.stderr.on('data', (data) => {
+            const chunk = data.toString();
+            stderrData += chunk;
+            // yt-dlp often uses stderr for info/warnings, not just errors
+            console.log('[yt-dlp STDERR]:', chunk.trim());
+        });
+
+        ytDlpProcess.on('error', (err) => {
+            console.error('[yt-dlp PROCESS ERROR]:', err);
+            const timestamp = Date.now();
+            const filename = `error_spawn_${timestamp}.txt`;
+            const filePath = path.join(downloadsDir, filename);
+            fs.writeFileSync(filePath, `Failed to start yt-dlp: ${err.message}\nURL: ${url}`);
+            const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+            reject(new Error(`Failed to start yt-dlp: ${err.message}`));
+        });
+
+        // --- 5. Handle process completion ---
+        ytDlpProcess.on('close', (code) => {
+            console.log(`[yt-dlp PROCESS CLOSED] with code ${code}`);
+
+            if (code === 0) {
+                // --- SUCCESS PATH ---
+                console.log("yt-dlp reported success (exit code 0). Looking for downloaded file...");
+
+                // --- 6. FIND THE DOWNLOADED FILE using the base name ---
+                // List files in the download directory
+                fs.readdir(downloadsDir, (readErr, files) => {
+                    if (readErr) {
+                        console.error("Error reading downloads directory:", readErr);
+                        reject(new Error(`Could not read downloads directory: ${readErr.message}`));
+                        return;
+                    }
+
+                    // Filter files that start with our base name
+                    const matchingFiles = files.filter(file =>
+                        file.startsWith(baseOutputName) &&
+                        file !== '.' && // Exclude current dir
+                        file !== '..' // Exclude parent dir
+                    );
+
+                    console.log(`Found ${matchingFiles.length} file(s) matching base name '${baseOutputName}':`, matchingFiles);
+
+                    if (matchingFiles.length === 1) {
+                        // Perfect! One file matches.
+                        const filename = matchingFiles[0];
+                        const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                        const title = filename.replace(/\.[^/.]+$/, ""); // Remove extension for title
+                        console.log(`✅ Successfully located downloaded file: ${filename}`);
+                        resolve({ success: true, title, downloadUrl, filename });
+
+                    } else if (matchingFiles.length > 1) {
+                        // Multiple files? This is unusual for a single download. Pick the most likely one or newest.
+                        console.warn("Multiple files matched base name. This is unexpected for a single download.");
+                        // Sort by modification time descending (newest first)
+                        const sortedMatches = matchingFiles.map(f => ({
+                            file: f,
+                            mtime: fs.statSync(path.join(downloadsDir, f)).mtime
+                        })).sort((a, b) => b.mtime - a.mtime);
+
+                        const filename = sortedMatches[0].file; // Pick newest
+                        const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                        const title = filename.replace(/\.[^/.]+$/, "");
+                        console.log(`✅ Picked newest file from multiple matches: ${filename}`);
+                        resolve({ success: true, title, downloadUrl, filename });
+
                     } else {
-                        console.log('yt-dlp downloaded and made executable');
+                        // No file found matching our base name.
+                        // This is the core issue we're trying to fix.
+                        console.error(`❌ CRITICAL: yt-dlp reported success (code 0), but no file matching '${baseOutputName}*' was found in ${downloadsDir}`);
+                        console.error("--- yt-dlp STDOUT ---");
+                        console.error(stdoutData);
+                        console.error("--- yt-dlp STDERR ---");
+                        console.error(stderrData);
+                        console.error("--- Files in directory ---");
+                        console.error(files);
+
+                        // Fallback: Check if ANY new file appeared recently (last 10 seconds)
+                        const recentFiles = files
+                            .filter(f => f !== '.' && f !== '..')
+                            .map(f => ({ file: f, mtime: fs.statSync(path.join(downloadsDir, f)).mtime }))
+                            .filter(item => (Date.now() - item.mtime.getTime()) < 10000) // Last 10 seconds
+                            .sort((a, b) => b.mtime - a.mtime);
+
+                        if (recentFiles.length > 0) {
+                            const filename = recentFiles[0].file;
+                            const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                            const title = filename.replace(/\.[^/.]+$/, "");
+                            console.warn(`⚠️ Fallback: Found a recently modified file: ${filename}`);
+                            resolve({ success: true, title, downloadUrl, filename });
+                        } else {
+                            // Truly no file found
+                            const timestamp = Date.now();
+                            const filename = `error_nofile_${timestamp}.txt`;
+                            const filePath = path.join(downloadsDir, filename);
+                            const content = `Download process reported success, but the file could not be located.\n` +
+                                            `Expected base name: ${baseOutputName}\n` +
+                                            `URL: ${url}\n` +
+                                            `Time: ${new Date().toISOString()}\n` +
+                                            `--- yt-dlp Output ---\nSTDOUT:\n${stdoutData}\nSTDERR:\n${stderrData}`;
+                            fs.writeFileSync(filePath, content);
+                            const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                            resolve({
+                                success: true, // Resolve as success to indicate the process completed, error state handled
+                                title: 'File Not Found',
+                                downloadUrl,
+                                filename,
+                                error: true
+                            });
+                        }
                     }
                 });
+
+            } else {
+                // --- ERROR PATH ---
+                console.error(`[yt-dlp FAILED] with exit code ${code}`);
+                console.error("--- yt-dlp STDOUT ---");
+                console.error(stdoutData);
+                console.error("--- yt-dlp STDERR ---");
+                console.error(stderrData);
+
+                const timestamp = Date.now();
+                const filename = `error_code${code}_${timestamp}.txt`;
+                const filePath = path.join(downloadsDir, filename);
+                const content = `Download failed!\nURL: ${url}\nExit Code: ${code}\nTime: ${new Date().toISOString()}\n--- Output ---\nSTDOUT:\n${stdoutData}\nSTDERR:\n${stderrData}`;
+                fs.writeFileSync(filePath, content);
+                const downloadUrl = `/downloads/${encodeURIComponent(filename)}`;
+                resolve({
+                    success: true, // Resolve as success, error state indicated in payload
+                    title: 'Download Failed',
+                    downloadUrl,
+                    filename,
+                    error: true
+                });
             }
-            resolve();
         });
     });
 }
 
-// Initialize yt-dlp on startup
-ensureYtDlp();
 
-// --- API Routes ---
-// Health check and info endpoints
-app.get('/api/platforms', (req, res) => {
-    console.log('GET /api/platforms');
-    res.json({
-        platforms: [
-            { name: 'YouTube', key: 'youtube', icon: '📺' },
-            { name: 'Instagram', key: 'instagram', icon: '📱' },
-            { name: 'TikTok', key: 'tiktok', icon: '🎵' },
-            { name: 'Twitter/X', key: 'twitter', icon: '🐦' },
-            { name: 'Other Platforms', key: 'generic', icon: '🔗' }
-        ]
-    });
-});
 
-app.get('/health', (req, res) => {
-    console.log('GET /health');
-    const ytDlpPath = path.join(__dirname, 'yt-dlp');
-    let ytDlpExists = false, ytDlpExecutable = false;
-    try {
-        const stats = fs.statSync(ytDlpPath);
-        ytDlpExists = true;
-        ytDlpExecutable = (stats.mode & 0o111) !== 0; // Check if any execute bit is set
-    } catch (e) {
-        // yt-dlp doesn't exist or can't be accessed
-    }
 
-    res.json({
-        status: 'OK',
-        timestamp: new Date().toISOString(),
-        realDownloads: realDownloadsEnabled,
-        ytDlpInstalled: ytDlpExists,
-        ytDlpExecutable: ytDlpExecutable,
-        downloadsDir: downloadsDir,
-        cookiesDir: cookiesDir
-    });
-});
+
 
 // Debug endpoint to list files
 app.get('/api/downloads', (req, res) => {
