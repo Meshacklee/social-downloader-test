@@ -324,7 +324,9 @@
         <p class="note">Supports YouTube, Instagram, TikTok, Twitter/X, and 1000+ other platforms</p>
     </div>
 
-       <script>
+        <script>
+    let uploadedCookieFile = null;
+    
     document.addEventListener('DOMContentLoaded', function() {
         // Load supported platforms
         fetch('/api/platforms')
@@ -339,49 +341,35 @@
                 `).join('');
             })
             .catch(error => {
-                console.log('Could not load platforms');
+                console.log('Could not load platforms, using defaults');
             });
         
-        // Get video info button
-        document.getElementById('getInfoBtn').addEventListener('click', async function() {
-            const url = document.getElementById('videoUrl').value;
-            
-            if (!url) {
-                alert('Please enter a video URL');
-                return;
-            }
-            
-            // Show loading
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('loadingText').textContent = 'Getting video information...';
-            document.getElementById('infoSection').style.display = 'none';
-            
-            try {
-                const response = await fetch('/api/video/info', {
+        // Handle cookie file upload
+        document.getElementById('cookieFile').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const formData = new FormData();
+                formData.append('cookieFile', file);
+                
+                fetch('/api/upload-cookie', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ url })
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        uploadedCookieFile = data.filename;
+                        alert('Cookie file uploaded successfully! It will be used for YouTube downloads.');
+                    } else {
+                        alert('Error uploading cookie file: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    alert('Error uploading cookie file: ' + error.message);
                 });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    currentVideoInfo = data.info;
-                    displayVideoInfo(data.info);
-                    document.getElementById('infoSection').style.display = 'block';
-                } else {
-                    throw new Error(data.error || 'Failed to get video info');
-                }
-            } catch (error) {
-                alert('Error: ' + error.message);
-            } finally {
-                document.getElementById('loading').style.display = 'none';
             }
         });
         
-        // Download button - IMPROVED VERSION
         document.getElementById('downloadBtn').addEventListener('click', async function() {
             const url = document.getElementById('videoUrl').value;
             
@@ -390,55 +378,35 @@
                 return;
             }
             
+            // Determine which endpoint to use
+            let endpoint = '/api/download';
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                endpoint = '/api/download/youtube';
+            } else if (url.includes('instagram.com')) {
+                endpoint = '/api/download/instagram';
+            } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
+                endpoint = '/api/download/tiktok';
+            } else if (url.includes('twitter.com') || url.includes('x.com')) {
+                endpoint = '/api/download/twitter';
+            }
+            
             // Show loading
             document.getElementById('loading').style.display = 'block';
-            document.getElementById('loadingText').textContent = 'Downloading your video...';
             document.getElementById('result').style.display = 'none';
-            document.getElementById('infoSection').style.display = 'none';
             
             try {
-                // Determine which endpoint to use
-                let endpoint = '/api/download';
-                if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                    endpoint = '/api/download/youtube';
-                } else if (url.includes('instagram.com')) {
-                    endpoint = '/api/download/instagram';
-                } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
-                    endpoint = '/api/download/tiktok';
-                } else if (url.includes('twitter.com') || url.includes('x.com')) {
-                    endpoint = '/api/download/twitter';
-                }
-                
                 const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
-                        // CRITICAL: Add proper error handling for fetch
                     },
-                    body: JSON.stringify({ url })
+                    body: JSON.stringify({ 
+                        url,
+                        cookieFile: uploadedCookieFile
+                    })
                 });
                 
-                // CRITICAL: Check if response is OK before parsing
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
-                }
-                
-                // CRITICAL: Get response text first to check if it's valid JSON
-                const responseText = await response.text();
-                
-                // CRITICAL: Check if response is empty
-                if (!responseText) {
-                    throw new Error('Empty response from server');
-                }
-                
-                // CRITICAL: Try to parse JSON safely
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                } catch (parseError) {
-                    console.error('Invalid JSON response:', responseText);
-                    throw new Error('Invalid response from server: ' + responseText.substring(0, 100) + '...');
-                }
+                const data = await response.json();
                 
                 if (data.success) {
                     // Hide loading, show result
@@ -448,24 +416,28 @@
                     // Update result content
                     document.getElementById('title').textContent = data.title || 'Video Ready';
                     
-                    // CRITICAL: Set up REAL download button with proper error handling
+                    // Set up REAL download button
                     document.getElementById('finalDownloadBtn').onclick = function() {
                         if (data.downloadUrl) {
-                            // CRITICAL: Construct full URL properly
+                            // Create full URL
                             let downloadUrl = data.downloadUrl;
                             if (!downloadUrl.startsWith('http')) {
-                                // Handle relative URLs correctly
-                                if (downloadUrl.startsWith('/')) {
-                                    downloadUrl = window.location.origin + downloadUrl;
-                                } else {
-                                    downloadUrl = window.location.origin + '/' + downloadUrl;
-                                }
+                                downloadUrl = window.location.origin + downloadUrl;
                             }
                             
-                            console.log('Opening download URL:', downloadUrl);
+                            console.log('Downloading from:', downloadUrl);
                             
-                            // CRITICAL: Use programmatic download triggering
-                            triggerBrowserDownload(downloadUrl, data.filename || 'video');
+                            // Create a temporary link and click it
+                            const link = document.createElement('a');
+                            link.href = downloadUrl;
+                            link.download = data.filename || 'video';
+                            link.style.display = 'none';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            
+                            // Alternative: Open in new tab
+                            // window.open(downloadUrl, '_blank');
                         } else {
                             alert('Download URL not available');
                         }
@@ -479,45 +451,107 @@
             }
         });
     });
+
     
-    // CRITICAL: WORKING DOWNLOAD FUNCTION - TRIGGERS BROWSER DOWNLOAD PROPERLY
-    function triggerBrowserDownload(downloadUrl, filename) {
-        console.log('User requested download:', downloadUrl, 'Filename:', filename);
-        
-        // Create full URL - THIS IS THE KEY FIX
-        let fullUrl = downloadUrl;
-        if (downloadUrl && !downloadUrl.startsWith('http')) {
-            // Handle relative URLs properly
-            if (downloadUrl.startsWith('/')) {
-                fullUrl = window.location.origin + downloadUrl;
-            } else {
-                fullUrl = window.location.origin + '/' + downloadUrl;
-            }
-        }
-        
-        console.log('Full download URL:', fullUrl);
-        
+
+
+
+
+
+
+// --- WORKING DOWNLOAD FUNCTION (PLACE THIS IN YOUR index.html <script> section) ---
+function triggerBrowserDownload(downloadUrl, filename) {
+    console.log("🔽 Frontend: triggerBrowserDownload called");
+    console.log("   Input downloadUrl:", downloadUrl);
+    console.log("   Input filename:", filename);
+
+    // --- ROBUST URL CONSTRUCTION ---
+    let finalUrlToUse = downloadUrl; // Default to the provided URL
+
+    // 1. Check if it's already an absolute URL
+    if (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://')) {
+        console.log("   ✅ downloadUrl is already absolute.");
+    } else if (downloadUrl.startsWith('/')) {
+        // 2. If it's a root-relative URL (e.g., /downloads/file.mp4)
+        console.log("   ℹ️ downloadUrl is root-relative. Constructing full URL...");
+        finalUrlToUse = window.location.origin + downloadUrl;
+        console.log("   🧮 Constructed full URL:", finalUrlToUse);
+    } else {
+        // 3. If it's path-relative (unlikely from your API, but handle anyway)
+        console.log("   ℹ️ downloadUrl is path-relative. Constructing full URL...");
+        // Use URL constructor for robust resolution
         try {
-            // CRITICAL: Create temporary link and click it programmatically
-            const link = document.createElement('a');
-            link.href = fullUrl;
-            link.download = filename || 'video'; // Suggests filename to browser
-            link.target = '_blank'; // Open in new tab if download doesn't trigger
-            link.rel = 'noopener noreferrer'; // Security best practice
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            console.log('Download triggered successfully');
-            
-        } catch (clickError) {
-            console.error('Error during programmatic download click:', clickError);
-            // Fallback: Open in new tab
-            console.log('Fallback: Opening URL in new tab...');
-            window.open(fullUrl, '_blank');
+            const resolvedUrl = new URL(downloadUrl, window.location.href);
+            finalUrlToUse = resolvedUrl.href;
+            console.log("   🧮 Constructed full URL:", finalUrlToUse);
+        } catch (urlError) {
+            console.error("   ❌ Error constructing URL with URL() constructor:", urlError);
+            // Fallback: prepend current path (less reliable)
+            const currentPath = window.location.pathname;
+            const basePath = currentPath.endsWith('/') ? currentPath : currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+            finalUrlToUse = window.location.origin + basePath + downloadUrl;
+            console.log("   🧮 Fallback constructed full URL:", finalUrlToUse);
         }
     }
+
+    console.log("   🎯 Final URL to trigger download:", finalUrlToUse);
+
+    try {
+        // --- METHOD 1: Programmatic Link Click (Preferred) ---
+        console.log("   🖱️ Attempting programmatic download via <a> tag click...");
+        const link = document.createElement('a');
+        link.href = finalUrlToUse;
+        link.download = filename || 'video'; // Suggests filename to browser
+        link.target = '_blank'; // Opens in new tab if download doesn't trigger
+        link.rel = 'noopener noreferrer'; // Security best practice
+        // Make it invisible
+        link.style.position = 'absolute';
+        link.style.left = '-9999px';
+        link.style.visibility = 'hidden';
+
+        document.body.appendChild(link);
+        console.log("   📎 Appended link to body, now clicking...");
+        link.click();
+        console.log("   ✅ Click event dispatched.");
+        document.body.removeChild(link);
+        console.log("   🗑️ Link removed from body.");
+
+        // --- Optional: Fallback Timer (if download doesn't start) ---
+        // Detecting if a download started is hard. A simple fallback is
+        // to inform the user after a short delay.
+        /*
+        const fallbackTimeout = 5000; // 5 seconds
+        const fallbackTimer = setTimeout(() => {
+            console.warn("   ⏳ Fallback: Download might not have started. Suggesting manual action.");
+            alert(`If the download didn't start, you can try:\n1. Right-clicking the link and 'Save Link As...'\n2. Opening this URL directly: ${finalUrlToUse}`);
+            // window.open(finalUrlToUse, '_blank'); // Alternative: open in new tab
+        }, fallbackTimeout);
+        // If you had a way to detect success/failure, you'd clearTimeout(fallbackTimer) here.
+        */
+
+    } catch (clickError) {
+        console.error("   ❌ Critical error during programmatic download click:", clickError);
+        alert("An unexpected error occurred while trying to start the download. Please try again or check the browser console for details (Press F12).");
+    }
+}
+
+// --- ASSUMING YOU HAVE AN EVENT LISTENER LIKE THIS ---
+// Find the part where you attach the click handler to the "Download Now" button
+// It might look like this:
+/*
+document.getElementById('finalDownloadBtn').addEventListener('click', function() {
+    // ... code that gets data.downloadUrl and data.filename ...
+    triggerBrowserDownload(data.downloadUrl, data.filename);
+});
+*/
+// OR, if you set `onclick` directly in the HTML like `onclick="downloadVideoFile(...)"`
+// You need to make sure it calls `triggerBrowserDownload` with the correct arguments.
+
+
+
+
+
+
 </script>
 
 </body>
