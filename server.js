@@ -494,77 +494,89 @@ app.post('/api/download', async (req, res) => {
 });
 
 // Batch download endpoint
-// Place this with your other API routes in server.js
+
+// === BATCH DOWNLOAD ENDPOINT - FIXED VERSION ===
 app.post('/api/download/batch', async (req, res) => {
-    // --- CRITICAL: LOG THE INCOMING REQUEST ---
+    const { urls } = req.body;
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+        return res.status(400).json({ error: 'URLs array is required' });
+    }
+    
     console.log('--- RECEIVED BATCH REQUEST ---');
     console.log('POST /api/download/batch');
     console.log('Headers:', req.headers);
     console.log('Body:', req.body);
     console.log('-------------------------------');
-
-    const { urls } = req.body;
-
-    if (!urls || !Array.isArray(urls) || urls.length === 0) {
-        console.error('❌ Batch Error: Invalid or empty URLs array');
-        return res.status(400).json({ error: 'URLs array is required and must not be empty' });
-    }
-
+    
     const numUrls = urls.length;
     console.log(`📥 Batch download requested for ${numUrls} videos`);
-
+    
     try {
         // Respond to the client immediately
-        res.status(202).json({ // 202 Accepted is often used for async processing
+        res.json({
             success: true,
-            message: `Batch download started for ${numUrls} videos. Processing in background.`,
-            total: numUrls,
-            acceptedAt: new Date().toISOString()
+            message: `Batch download started for ${numUrls} videos`,
+            total: numUrls
         });
-
+        
         console.log(`📤 Responsed to client. Now processing ${numUrls} videos in background...`);
-
+        
         // --- BACKGROUND PROCESSING ---
-        // Use an IIFE to handle async processing without blocking the response
-        (async () => {
+        process.nextTick(async () => {
             console.log(`🚀 Background Task: Starting batch processing for ${numUrls} videos`);
             
-            // Array to store results (optional, for future enhancements like reporting)
             const results = [];
-
+            
             for (let i = 0; i < urls.length; i++) {
                 const url = urls[i];
                 const currentItemLogPrefix = `[Item ${i+1}/${numUrls}]`;
-
+                
                 console.log(`${currentItemLogPrefix} 🔽 Starting download for: ${url.substring(0, 100)}${url.length > 100 ? '...' : ''}`);
-
+                
                 try {
-                    // --- CALL THE EXISTING downloadVideo FUNCTION ---
-                    // This is the key: reuse your proven single download logic.
-                    const downloadResult = await downloadVideo(url, null); // Pass cookie if needed
-
+                    // --- CRITICAL FIX: Properly handle the returned result ---
+                    const downloadResult = await downloadVideo(url, null);
+                    
                     console.log(`${currentItemLogPrefix} ✅ Completed. Result:`, {
                         success: downloadResult.success,
                         title: downloadResult.title,
-                        filename: downloadResult.filename
+                        filename: downloadResult.filename,
+                        // --- CRITICAL: Make sure downloadUrl is included ---
+                        downloadUrl: downloadResult.downloadUrl
                     });
-
-                    results.push({ index: i, url, status: 'completed', result: downloadResult });
-
-                    // Optional: Add a small delay between downloads
+                    
+                    // --- CRITICAL: Include downloadUrl in results ---
+                    results.push({
+                        index: i,
+                        url: url,
+                        status: 'completed',
+                        result: {
+                            success: downloadResult.success,
+                            title: downloadResult.title,
+                            filename: downloadResult.filename,
+                            downloadUrl: downloadResult.downloadUrl  // <- This was missing!
+                        }
+                    });
+                    
+                    // Add delay between downloads
                     if (i < urls.length - 1) {
-                       console.log(`${currentItemLogPrefix} ⏳ Waiting 2 seconds before next download...`);
-                       await new Promise(resolve => setTimeout(resolve, 2000));
+                        console.log(`${currentItemLogPrefix} ⏳ Waiting 2 seconds before next download...`);
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                     }
-
-                } catch (itemError) {
-                    console.error(`${currentItemLogPrefix} ❌ Failed.`, url, itemError.message);
-                    results.push({ index: i, url, status: 'failed', error: itemError.message });
-
-                    // Continue with the next item even if one fails
+                    
+                } catch (error) {
+                    console.error(`${currentItemLogPrefix} ❌ Failed.`, url, error.message);
+                    results.push({
+                        index: i,
+                        url: url,
+                        status: 'failed',
+                        error: error.message
+                    });
+                    // Continue with next item even if one fails
                 }
             }
-
+            
             console.log(`🏁 Background Task: Batch processing finished for ${numUrls} videos.`);
             console.log('--- BATCH RESULTS SUMMARY ---');
             results.forEach(r => {
@@ -575,18 +587,13 @@ app.post('/api/download/batch', async (req, res) => {
                 }
             });
             console.log('------------------------------');
+            
             // Here you could potentially emit events or store results for later retrieval
             // if you implement real-time updates (e.g., with WebSockets).
-
-        })(); // Invoke the async function immediately
-
-    } catch (backgroundError) {
-        // This catch block handles errors in setting up the background task itself,
-        // NOT errors during the downloading of individual videos.
-        // Since we've already sent the response, we can only log.
-        console.error("🔥 UNEXPECTED ERROR in batch background setup:", backgroundError);
-        // Cannot send a response here as it's already been sent.
-        // The client has been informed that the job started.
+        });
+    } catch (error) {
+        console.error("🔥 UNEXPECTED ERROR in batch background setup:", error);
+        // Cannot send response here since it's already sent
     }
 });
 
