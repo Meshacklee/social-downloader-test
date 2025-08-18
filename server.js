@@ -23,7 +23,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // CRITICAL: Serve downloaded videos with proper path resolution
 const downloadsDir = path.join(__dirname, 'downloads');
-app.use('/downloads', express.static(downloadsDir));
+app.use('/downloads', express.static(downloadsDir, {
+    setHeaders: (res, filePath) => {
+        // Set proper content types for video files
+        if (filePath.endsWith('.mp4')) {
+            res.setHeader('Content-Type', 'video/mp4');
+        } else if (filePath.endsWith('.webm')) {
+            res.setHeader('Content-Type', 'video/webm');
+        } else if (filePath.endsWith('.mkv')) {
+            res.setHeader('Content-Type', 'video/x-matroska');
+        }
+    }
+}));
 
 // Ensure downloads directory exists
 if (!fs.existsSync(downloadsDir)) {
@@ -525,21 +536,3 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 console.log('=== SERVER SETUP COMPLETE ===');
-
-// Add this route to handle root path requests
-app.get('/', (req, res) => {
-    console.log('GET / - Root path requested');
-    // Serve your main page
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Add this AFTER all your other routes
-// Catch all unmatched routes
-app.use((req, res) => {
-    console.log('404 - Unmatched route:', req.method, req.path);
-    res.status(404).json({
-        error: 'Route not found',
-        path: req.path,
-        method: req.method
-    });
-});
