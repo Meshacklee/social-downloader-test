@@ -1,27 +1,18 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 const multer = require('multer');
 
 console.log('=== SERVER STARTING ===');
 
 const app = express();
-const PORT = process.env.PORT || 10000; // Use Render's default port
-
-// Configure multer for cookie file uploads
-const upload = multer({ 
-    dest: 'cookies/',
-    limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB limit
-    }
-});
+const PORT = process.env.PORT || 10000;
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
-
-
 
 // CRITICAL: Serve downloaded videos with proper path resolution
 const downloadsDir = path.join(__dirname, 'downloads');
@@ -54,25 +45,9 @@ if (!fs.existsSync(cookiesDir)) {
     console.log('Created cookies directory');
 }
 
-
-
-
-
-
-
 // Check if real downloads are enabled
 const realDownloadsEnabled = fs.existsSync(path.join(__dirname, 'ENABLE_REAL_DOWNLOADS'));
 console.log('Real downloads enabled:', realDownloadsEnabled);
-
-
-
-
-
-
-
-
-
-
 
 // Download yt-dlp if it doesn't exist and real downloads are enabled
 function ensureYtDlp() {
@@ -97,55 +72,6 @@ function ensureYtDlp() {
             resolve();
             return;
         }
-        // Inside downloadVideo function, in the yt-dlpProcess.on('close', (code) => { ... }) block
-// Where you handle code === 0:
-
-if (code === 0) {
-    console.log("✅ yt-dlp process exited successfully.");
-    
-    // --- ADD THIS LOGGING ---
-    console.log("🔍 Checking downloads directory for new files...");
-    console.log("   Downloads directory path:", downloadsDir);
-    
-    try {
-        const files = fs.readdirSync(downloadsDir);
-        console.log("   Files in directory:", files);
-        
-        if (files.length > 0) {
-            // Get the most recent file
-            const recentFiles = files
-                .map(file => ({ 
-                    file, 
-                    mtime: fs.statSync(path.join(downloadsDir, file)).mtime,
-                    fullPath: path.join(downloadsDir, file)
-                }))
-                .sort((a, b) => b.mtime - a.mtime);
-            
-            const recentFileObj = recentFiles[0];
-            console.log("   Most recent file found:");
-            console.log("     Name:", recentFileObj.file);
-            console.log("     Modified:", recentFileObj.mtime);
-            console.log("     Full Path:", recentFileObj.fullPath);
-            console.log("     File exists:", fs.existsSync(recentFileObj.fullPath));
-            
-            const downloadUrl = `/downloads/${encodeURIComponent(recentFileObj.file)}`;
-            
-            resolve({
-                success: true,
-                title: recentFileObj.file.replace(/\.[^/.]+$/, ""),
-                downloadUrl: downloadUrl,
-                filename: recentFileObj.file
-            });
-        } else {
-            console.error("❌ No files found in downloads directory after successful yt-dlp run!");
-            reject(new Error('No files found after download'));
-        }
-    } catch (fileError) {
-        console.error("❌ Error reading downloads directory:", fileError);
-        reject(new Error('Could not read downloads directory: ' + fileError.message));
-    }
-}
-
         
         console.log('Downloading yt-dlp...');
         const downloadCommand = 'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp';
@@ -352,7 +278,6 @@ function downloadVideo(url, cookieFilename = null) {
                             .sort((a, b) => b.mtime - a.mtime);
                         
                         const recentFile = recentFiles[0].file;
-                        // CRITICAL: Use proper URL encoding
                         const downloadUrl = `/downloads/${encodeURIComponent(recentFile)}`;
                         
                         resolve({
@@ -493,101 +418,132 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
-// Batch download endpoint
-// Place this with your other API routes in server.js
+// === BATCH DOWNLOAD WITH REAL-TIME UPDATES ===
+const batchJobs = new Map(); // Store batch job statuses
+
 app.post('/api/download/batch', async (req, res) => {
-    // --- CRITICAL: LOG THE INCOMING REQUEST ---
-    console.log('--- RECEIVED BATCH REQUEST ---');
-    console.log('POST /api/download/batch');
-    console.log('Headers:', req.headers);
-    console.log('Body:', req.body);
-    console.log('-------------------------------');
-
-    const { urls } = req.body;
-
+    const { urls, jobId } = req.body;
+    
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
-        console.error('❌ Batch Error: Invalid or empty URLs array');
-        return res.status(400).json({ error: 'URLs array is required and must not be empty' });
+        return res.status(400).json({ error: 'URLs array is required' });
     }
-
-    const numUrls = urls.length;
-    console.log(`📥 Batch download requested for ${numUrls} videos`);
-
-    try {
-        // Respond to the client immediately
-        res.status(202).json({ // 202 Accepted is often used for async processing
-            success: true,
-            message: `Batch download started for ${numUrls} videos. Processing in background.`,
-            total: numUrls,
-            acceptedAt: new Date().toISOString()
-        });
-
-        console.log(`📤 Responsed to client. Now processing ${numUrls} videos in background...`);
-
-        // --- BACKGROUND PROCESSING ---
-        // Use an IIFE to handle async processing without blocking the response
-        (async () => {
-            console.log(`🚀 Background Task: Starting batch processing for ${numUrls} videos`);
+    
+    const batchJobId = jobId || `batch_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    
+    console.log('Batch download requested for', urls.length, 'videos with jobId:', batchJobId);
+    
+    // Initialize batch job status
+    batchJobs.set(batchJobId, {
+        id: batchJobId,
+        total: urls.length,
+        completed: 0,
+        failed: 0,
+        videos: urls.map((url, index) => ({
+            id: index,
+            url: url,
+            status: 'pending',
+            title: url.substring(0, 60) + (url.length > 60 ? '...' : ''),
+            progress: 0,
+            downloadUrl: null,
+            filename: null,
+            error: null
+        })),
+        createdAt: new Date().toISOString()
+    });
+    
+    // Return job ID immediately
+    res.json({
+        success: true,
+        message: `Batch download started for ${urls.length} videos`,
+        jobId: batchJobId,
+        total: urls.length
+    });
+    
+    // Process videos in background
+    process.nextTick(async () => {
+        console.log('Starting batch download for', urls.length, 'videos with jobId:', batchJobId);
+        
+        const job = batchJobs.get(batchJobId);
+        if (!job) return;
+        
+        for (let i = 0; i < urls.length; i++) {
+            const url = urls[i];
+            const videoId = i;
             
-            // Array to store results (optional, for future enhancements like reporting)
-            const results = [];
-
-            for (let i = 0; i < urls.length; i++) {
-                const url = urls[i];
-                const currentItemLogPrefix = `[Item ${i+1}/${numUrls}]`;
-
-                console.log(`${currentItemLogPrefix} 🔽 Starting download for: ${url.substring(0, 100)}${url.length > 100 ? '...' : ''}`);
-
-                try {
-                    // --- CALL THE EXISTING downloadVideo FUNCTION ---
-                    // This is the key: reuse your proven single download logic.
-                    const downloadResult = await downloadVideo(url, null); // Pass cookie if needed
-
-                    console.log(`${currentItemLogPrefix} ✅ Completed. Result:`, {
-                        success: downloadResult.success,
-                        title: downloadResult.title,
-                        filename: downloadResult.filename
-                    });
-
-                    results.push({ index: i, url, status: 'completed', result: downloadResult });
-
-                    // Optional: Add a small delay between downloads
-                    if (i < urls.length - 1) {
-                       console.log(`${currentItemLogPrefix} ⏳ Waiting 2 seconds before next download...`);
-                       await new Promise(resolve => setTimeout(resolve, 2000));
-                    }
-
-                } catch (itemError) {
-                    console.error(`${currentItemLogPrefix} ❌ Failed.`, url, itemError.message);
-                    results.push({ index: i, url, status: 'failed', error: itemError.message });
-
-                    // Continue with the next item even if one fails
+            console.log(`Processing video ${i + 1}/${urls.length}:`, url);
+            
+            // Update job status
+            job.videos[videoId].status = 'processing';
+            job.videos[videoId].progress = 30;
+            batchJobs.set(batchJobId, job);
+            
+            try {
+                // Determine endpoint based on URL
+                let endpoint = '/api/download';
+                if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                    endpoint = '/api/download/youtube';
+                } else if (url.includes('instagram.com')) {
+                    endpoint = '/api/download/instagram';
+                } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
+                    endpoint = '/api/download/tiktok';
+                } else if (url.includes('twitter.com') || url.includes('x.com')) {
+                    endpoint = '/api/download/twitter';
                 }
+                
+                // Download the video
+                const result = await downloadVideo(url, null);
+                
+                // Update job status
+                job.videos[videoId].status = 'completed';
+                job.videos[videoId].progress = 100;
+                job.videos[videoId].title = result.title || 'Download Complete';
+                job.videos[videoId].downloadUrl = result.downloadUrl;
+                job.videos[videoId].filename = result.filename;
+                job.completed++;
+                batchJobs.set(batchJobId, job);
+                
+                console.log(`Successfully downloaded video ${i + 1}:`, result.title);
+                
+                // Add delay between downloads
+                if (i < urls.length - 1) {
+                    console.log('Waiting 2 seconds before next download...');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+                
+            } catch (error) {
+                console.error(`Error processing video ${i + 1}:`, url, error.message);
+                
+                // Update job status
+                job.videos[videoId].status = 'error';
+                job.videos[videoId].progress = 0;
+                job.videos[videoId].error = error.message;
+                job.failed++;
+                batchJobs.set(batchJobId, job);
             }
+        }
+        
+        console.log('Batch download processing completed for jobId:', batchJobId);
+    });
+});
 
-            console.log(`🏁 Background Task: Batch processing finished for ${numUrls} videos.`);
-            console.log('--- BATCH RESULTS SUMMARY ---');
-            results.forEach(r => {
-                if (r.status === 'completed') {
-                    console.log(`   Item ${r.index + 1}: ✅ ${r.result.title || r.result.filename}`);
-                } else {
-                    console.log(`   Item ${r.index + 1}: ❌ ${r.url} - ${r.error}`);
-                }
-            });
-            console.log('------------------------------');
-            // Here you could potentially emit events or store results for later retrieval
-            // if you implement real-time updates (e.g., with WebSockets).
-
-        })(); // Invoke the async function immediately
-
-    } catch (backgroundError) {
-        // This catch block handles errors in setting up the background task itself,
-        // NOT errors during the downloading of individual videos.
-        // Since we've already sent the response, we can only log.
-        console.error("🔥 UNEXPECTED ERROR in batch background setup:", backgroundError);
-        // Cannot send a response here as it's already been sent.
-        // The client has been informed that the job started.
+// Get batch job status
+app.get('/api/download/batch/:jobId', (req, res) => {
+    const { jobId } = req.params;
+    
+    if (!jobId) {
+        return res.status(400).json({ error: 'Job ID is required' });
     }
+    
+    const job = batchJobs.get(jobId);
+    
+    if (!job) {
+        return res.status(404).json({ error: 'Batch job not found' });
+    }
+    
+    res.json({
+        success: true,
+        job: job
+    });
 });
 
 // Serve main pages
@@ -608,6 +564,7 @@ app.get('/api/downloads', (req, res) => {
         res.json({
             success: true,
             files: files,
+            count: files.length,
             downloadsDir: downloadsDir
         });
     } catch (error) {
@@ -630,10 +587,8 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// CRITICAL: Bind to 0.0.0.0 as required by Render
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log('Downloads directory:', downloadsDir);
     console.log('Real downloads enabled:', realDownloadsEnabled);
 });
 
