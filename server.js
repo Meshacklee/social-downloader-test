@@ -525,3 +525,21 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 console.log('=== SERVER SETUP COMPLETE ===');
+
+// Add this route to handle root path requests
+app.get('/', (req, res) => {
+    console.log('GET / - Root path requested');
+    // Serve your main page
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Add this AFTER all your other routes
+// Catch all unmatched routes
+app.use((req, res) => {
+    console.log('404 - Unmatched route:', req.method, req.path);
+    res.status(404).json({
+        error: 'Route not found',
+        path: req.path,
+        method: req.method
+    });
+});
