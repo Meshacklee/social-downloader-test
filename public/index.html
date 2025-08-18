@@ -451,6 +451,75 @@
             }
         });
     });
+
+    
+
+
+
+
+
+
+// --- WORKING DOWNLOAD FUNCTION (PLACE THIS IN YOUR index.html <script> section) ---
+// Inside the part where you handle the download button click
+document.getElementById('finalDownloadBtn').onclick = function() {
+    if (data.downloadUrl) {
+        console.log("📥 Frontend: Download button clicked. Received downloadUrl:", data.downloadUrl);
+
+        let fullDownloadUrl;
+
+        // --- Robust URL Construction ---
+        if (data.downloadUrl.startsWith('http://') || data.downloadUrl.startsWith('https://')) {
+            // Already an absolute URL
+            fullDownloadUrl = data.downloadUrl;
+            console.log("   ✅ downloadUrl is already absolute.");
+        } else if (data.downloadUrl.startsWith('/')) {
+            // Root-relative path (e.g., /downloads/file.mp4)
+            fullDownloadUrl = `${window.location.origin}${data.downloadUrl}`;
+            console.log("   ℹ️ downloadUrl is root-relative. Constructed full URL:", fullDownloadUrl);
+        } else {
+            // Path-relative (unlikely from your API, but handle defensively)
+            console.warn("   ⚠️ downloadUrl is path-relative. This is unexpected.");
+            fullDownloadUrl = `${window.location.origin}/${data.downloadUrl}`;
+            console.log("   🧮 Fallback constructed full URL:", fullDownloadUrl);
+        }
+
+        console.log("   🎯 Final URL to trigger download:", fullDownloadUrl);
+
+        // --- Trigger Download ---
+        try {
+            const link = document.createElement('a');
+            link.href = fullDownloadUrl;
+            // Suggest filename to browser (important for simulated .txt files saved as .mp4)
+            link.download = data.filename || 'video.mp4';
+            link.target = '_blank'; // Open in new tab if download doesn't trigger
+            link.rel = 'noopener noreferrer'; // Security best practice
+            link.style.position = 'absolute';
+            link.style.left = '-9999px';
+            link.style.visibility = 'hidden';
+
+            document.body.appendChild(link);
+            console.log("   🖱️ Programmatically clicking download link...");
+            link.click();
+            console.log("   ✅ Click event dispatched.");
+            document.body.removeChild(link);
+            console.log("   🗑️ Temporary link removed.");
+
+        } catch (clickError) {
+            console.error("   ❌ Error during programmatic click:", clickError);
+            // Fallback: Open in new tab
+            console.log("   🔄 Fallback: Opening URL in new tab...");
+            window.open(fullDownloadUrl, '_blank', 'noopener,noreferrer');
+        }
+
+    } else {
+        alert('Download URL not available');
+    }
+};
+
+
+
+
+
 </script>
 
 </body>

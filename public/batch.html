@@ -570,122 +570,93 @@ https://vm.tiktok.com/..."></textarea>
     }
 
 
-    async function startBatchDownload() {
-        const urls = videoQueue.map(video => video.url);
+    // Example of what might be in your batch.html JS
+async function startBatchDownload() { // Or similar function name
+    const urls = videoQueue.map(video => video.url); // Get URLs from your queue
 
-        if (urls.length === 0) {
-            alert('No videos in queue');
-            return;
+    if (urls.length === 0) {
+        alert('No videos in queue');
+        return;
+    }
+
+    // --- CRITICAL: Ensure Correct API Endpoint URL ---
+    // The URL passed to `fetch` MUST be `/api/download/batch`
+    // Often, constructing it relative to the current origin is safest.
+
+    const batchApiUrl = '/api/download/batch'; // This is the simplest if your API is on the same origin
+    // OR, more explicitly:
+    // const batchApiUrl = `${window.location.origin}/api/download/batch`;
+
+    console.log("🚀 Initiating batch download to:", batchApiUrl);
+    console.log("📦 Payload (URLs):", urls);
+
+    document.getElementById('loading').style.display = 'block'; // Show loading spinner/message
+
+    try {
+        const response = await fetch(batchApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ urls }) // Send the array of URLs
+        });
+
+        console.log("📡 Batch API Response Received. Status:", response.status);
+
+        if (!response.ok) {
+            // Handle HTTP errors (e.g., 400, 500)
+            let errorMsg = `Server error (${response.status})`;
+            try {
+                const errorData = await response.json();
+                errorMsg = errorData.error || errorMsg;
+            } catch (e) {
+                // Ignore if error response isn't JSON
+            }
+            throw new Error(errorMsg);
         }
 
-        document.getElementById('loading').style.display = 'block';
-        document.getElementById('successMessage').style.display = 'none'; // Reset previous messages
+        const data = await response.json();
+        console.log("📨 Batch API Response Data:", data);
 
-        try {
-            const response = await fetch('/api/download/batch', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ urls })
-            });
-
-            if (!response.ok) {
-                // Handle HTTP errors (e.g., 500 server error)
-                const errorData = await response.json().catch(() => ({})); // Try to parse error JSON, ignore if fails
-                throw new Error(`Server error (${response.status}): ${errorData.error || response.statusText}`);
-            }
-
-            const data = await response.json();
-
-            if (data.success) {
-                document.getElementById('loading').style.display = 'none';
-                const successMsgEl = document.getElementById('successMessage');
-                successMsgEl.innerHTML = '🎉 Batch download started! Videos are being processed sequentially.';
-                successMsgEl.style.display = 'block';
-                successMsgEl.style.backgroundColor = '#d4edda'; // Bootstrap success green
-                successMsgEl.style.color = '#155724';
-
-                // Update UI to show processing state for all items
-                videoQueue.forEach(video => {
-                    updateVideoStatus(video.id, 'processing', null, 20); // Show some initial progress
-                });
-
-
-                // --- IMPORTANT: Real-Time Updates ---
-                // The logic here assumes your backend processes videos sequentially and
-                // somehow communicates back the completion and download URLs.
-                // Since your current backend simulation doesn't do this, we'll simulate the final outcome.
-                // In a real-world scenario, you'd use WebSockets or Server-Sent Events.
-
-                // Simulate processing completion and receiving real download URLs
-                // This part mimics what a real-time update handler would do
-                setTimeout(() => {
-                     // 1. Simulate backend finishing downloads and having real URLs ready
-                     // In reality, the backend would send these updates.
-                     console.log("Simulating backend completion and sending real download URLs...");
-
-                     videoQueue.forEach((video, index) => {
-                         // 2. Simulate a slight delay between completions
-                         setTimeout(() => {
-                             // 3. Generate a plausible *relative* download URL
-                             // This MUST match how your Express server serves files via `app.use('/downloads', ...)`
-                             // For demonstration, let's assume the backend saves files with a name related to the video title or ID
-                             // and we get the *actual* filename back from the download process.
-                             // Since we're simulating, we'll make one up. A real backend would provide the correct one.
-                             // Let's assume the backend provides the actual filename in the `downloadVideo` result.
-
-                             // *** This is the KEY PART ***
-                             // Instead of mock URLs, we simulate getting the REAL URL from the backend process.
-                             // For this simulation, let's pretend the filename is derived from the video title.
-                             // In a real app, the backend's downloadVideo function returns the actual filename.
-                             const simulatedActualFilename = `downloaded_video_${index + 1}_${Date.now()}.mp4`; // Simulate unique filename
-                             const realDownloadUrl = `/downloads/${encodeURIComponent(simulatedActualFilename)}`; // Match server static route
-
-                             updateVideoStatus(
-                                 video.id,
-                                 'completed', // Mark as completed
-                                 video.title, // Keep original title
-                                 100, // Full progress
-                                 realDownloadUrl, // Provide the REAL URL (simulated)
-                                 simulatedActualFilename // Provide the REAL filename (simulated)
-                             );
-
-                             console.log(`✅ Simulated completion for Video ${index + 1}:`, video.title, 'URL:', realDownloadUrl);
-
-                         }, index * 2000); // Stagger simulated completions
-                     });
-
-                     // 4. Update final message after all simulated completions
-                     setTimeout(() => {
-                         const finalMsgEl = document.getElementById('successMessage');
-                         finalMsgEl.innerHTML = `
-                             ✅ All videos processed (simulated)!<br>
-                             <small>Click the "Download Video" buttons above to attempt downloading each video.</small><br>
-                             <small><i>Note: Since this is a simulation, the files might not actually exist on the server yet.</i></small>
-                         `;
-                         finalMsgEl.style.backgroundColor = '#cce7ff'; // Info blue
-                         finalMsgEl.style.color = '#004085';
-                     }, videoQueue.length * 2000 + 1000);
-
-
-                }, 2000); // Initial delay before starting simulation
-
-
-            } else {
-                throw new Error(data.error || 'Batch download initiation failed');
-            }
-        } catch (error) {
+        if (data.success) {
+            // Hide loading, show success message
             document.getElementById('loading').style.display = 'none';
-            console.error("Batch download start failed:", error);
-            const errorMsg = `Error starting batch download: ${error.message}`;
-            document.getElementById('successMessage').innerHTML = errorMsg; // Reuse success div for error display
-            document.getElementById('successMessage').style.display = 'block';
-            document.getElementById('successMessage').style.backgroundColor = '#f8d7da'; // Bootstrap danger red
-            document.getElementById('successMessage').style.color = '#721c24';
-            // alert(errorMsg); // Alert is intrusive, using the message area is better
+            const successMessageElement = document.getElementById('successMessage') || document.getElementById('result'); // Adjust selector
+            if (successMessageElement) {
+                successMessageElement.innerHTML = `
+                    <h3>✅ Batch Started!</h3>
+                    <p>${data.message}</p>
+                    <p>Total Videos: ${data.total}</p>
+                    <small>Check back later or monitor the server logs.</small>
+                `;
+                successMessageElement.style.display = 'block';
+            }
+            console.log("🎉 Batch download process initiated successfully on the server.");
+
+            // Optional: Clear the input/UI
+            // Clear the text area where URLs were entered
+            const urlTextArea = document.getElementById('videoUrls'); // Adjust selector
+            if (urlTextArea) urlTextArea.value = '';
+            // Clear the video queue/UI list
+            // ... (implementation depends on how you manage your UI queue)
+
+        } else {
+            throw new Error(data.error || 'Batch download failed to start');
+        }
+    } catch (error) {
+        console.error("💥 Error initiating batch download:", error);
+        document.getElementById('loading').style.display = 'none'; // Hide loading spinner
+        const errorMessageElement = document.getElementById('errorMessage') || alert; // Fallback to alert
+        const errorMsg = `Error: ${error.message}`;
+        if (typeof errorMessageElement === 'function') {
+             // If it's the alert fallback
+             errorMessageElement(errorMsg);
+        } else {
+             errorMessageElement.innerHTML = errorMsg; // Or use textContent
+             errorMessageElement.style.display = 'block';
         }
     }
+}
 
     // --- END OF ADVANCED DOWNLOAD HANDLING ---
 </script>
